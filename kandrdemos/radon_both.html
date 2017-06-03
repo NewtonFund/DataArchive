@@ -1,0 +1,183 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+
+    <link href="https://www.kandrsmith.org/emoncms/Lib/bootstrap/css/bootstrap.min.css" rel="stylesheet"> 
+
+    <title>Centennial Radon Monitor</title>
+  </head>
+  <body>
+    <div class="content">
+
+ <!--[if IE]><script language="javascript" type="text/javascript" src="https://www.kandrsmith.org/emoncms/Lib/flot/excanvas.min.js"></script><![endif]-->
+<script language="javascript" type="text/javascript" src="https://www.kandrsmith.org/emoncms/Lib/flot/jquery.flot.min.js"></script>
+<script language="javascript" type="text/javascript" src="https://www.kandrsmith.org/emoncms/Lib/flot/jquery.flot.time.min.js"></script>
+<script language="javascript" type="text/javascript" src="https://www.kandrsmith.org/emoncms/Lib/flot/jquery.flot.selection.min.js"></script>
+<script language="javascript" type="text/javascript" src="https://www.kandrsmith.org/emoncms/Lib/flot/jquery.flot.axislabels.js"></script>
+<script language="javascript" type="text/javascript" src="https://www.kandrsmith.org/emoncms/Lib/flot/jquery.flot.downsample.js"></script>
+
+    <div id="graph_bound" style="width:100%; height:400px; position:relative; ">
+      <div id="graph"></div>
+      <div id="graph_buttons" style="position:absolute; top:20px; left:60px; opacity:0.5">
+
+        <input class='time' type="button" value="D" time="1"/>
+        <input class='time' type="button" value="W" time="7"/>
+        <input class='time' type="button" value="M" time="30"/>
+        <input class='time' type="button" value="Y" time="365"/> | 
+
+        <input id="zoomin" type="button" value="+"/>
+        <input id="zoomout" type="button" value="-"/>
+        <input id="left" type="button" value="<"/>
+        <input id="right" type="button" value=">"/>
+
+      </div>
+
+        <h4 style="position:absolute; bottom:20px; left:60px;"><span id="stats"></span></h4>
+       
+    </div>
+
+<script id="source" language="javascript" type="text/javascript">
+
+  //var plotfill = false;
+  var units = "pC/l";
+
+  $('#graph').width($('#graph_bound').width());
+  $('#graph').height($(window).height());
+
+  var timeWindow = (3600000*24.0*365*3);                        //Initial time window
+  var start = ((new Date()).getTime())-timeWindow;              //Get start time
+  var end = (new Date()).getTime();                             //Get end time
+  //document.write("<p>"+start+"</p>");
+  //document.write("<p>"+end+"</p>");
+  var middle = start + timeWindow / 2;
+
+  var series1 = [];
+  var series2 = [];
+
+  vis_feed_data();
+
+  $(window).resize(function(){
+    $('#graph').width($('#graph_bound').width()); 
+    $('#graph').height($(window).height());
+    plot();
+  });
+
+  function vis_feed_data()
+  {
+
+    $.ajax({
+      url: 'get_single_feed.php' , 
+      data: "&feed=25&start="+start+"&end="+end ,
+      dataType: 'json',
+      async: false,
+      success: function(datain) { series1 = datain; }
+    });
+
+    $.ajax({
+      url: 'get_single_feed.php' , 
+      data: "&feed=23&start="+start+"&end="+end ,
+      dataType: 'json',
+      async: false,
+      success: function(datain) { series2 = datain; }
+    });
+
+    // Diagnostic stats could go in a function
+    var average = 0;
+    for (var i=0; i<series1.length; i++) average += 1*series1[i][1];
+    average = average / series1.length;
+    var out = "Short Avg: "+average.toFixed(2)+units;
+    average = 0;
+    for (var i=0; i<series2.length; i++) average += 1*series2[i][1];
+    average = average / series2.length;
+    out += "<br>Long Avg: "+average.toFixed(2)+units;
+    $("#stats").html(out);   
+
+    plot();
+
+  }
+
+  function plot()
+  {
+        var annotations = [
+                        // milliseconds since 1970
+                        { xaxis: { from: 1364943600000, to: 1392336000000 }, yaxis: { from: 2.8, to: 2.8 },color: "#AAFFAA", lineWidth: 2 },  // alpha track1
+                        { xaxis: { from: 1364943600000, to: 1392336000000 }, yaxis: { from: 3.1, to: 3.1 },color: "#AAFFAA", lineWidth: 2 },  // alpha track2
+                        { xaxis: { from: 1414886400000, to: 1415232000000 }, yaxis: { from: 0.9, to: 0.9 },color: "#AAFFAA", lineWidth: 2 },  // charcoal post-mitigation
+                        { xaxis: { from: 1393113600000, to: 1393113600000 }, color: "#0000FF", lineWidth: 2 },  // Reboot
+                        { xaxis: { from: 1428537600000, to: 1428537600000 }, color: "#0000FF", lineWidth: 2 },  // Reboot
+                        { xaxis: { from: 1411858800000, to: 1411858800000 }, color: "#FF0000", lineWidth: 2 }   // Barrier installed
+        ];
+
+    var plot = $.plot($("#graph"), 
+        [ {label: "One week running average", data: series1 , lines: { show: true, fill: false} },
+          {label: "Long term average" , data: series2 , lines: { show: true, fill: false}, points: {show: false} } ],
+        {
+          //grid: { show: true, hoverable: true, clickable: true },
+          grid: { 
+                show: true, 
+                hoverable: true, 
+                clickable: true, 
+                markings: annotations
+          },
+          xaxis: { mode: "time", timezone: null, min: start, max: end, timeformat: "%Y/%m/%d", ticks: 5, labelHeight: null },  // timeformat: "%Y/%m/%d"
+          //xaxes: [ {mode: "time", localTimezone: true, min: start, max: end, labelHeight: null }],
+          yaxes: [ {position: 'left', axisLabel: 'Radioactivity (pC/l)', color: '#000' }],
+          selection: { mode: "xy" },
+          legend: { show: true, position: "ne" },
+          //series: { downsample: {threshold: 1000} }
+        }
+     );
+    //plot.highlight(0,40);
+
+
+        $("<div id='tooltip'></div>").css({
+                        position: "absolute",
+                        display: "none",
+                        border: "1px solid #fdd",
+                        padding: "2px",
+                        "background-color": "#fee",
+                        opacity: 0.80
+        }).appendTo("body");
+
+        $("#graph").bind("plothover", function (event, pos, item) {
+          if (item) {
+            //console.log(item);
+            var x = item.datapoint[0].toFixed(0) / 1000,
+                y = item.datapoint[1].toFixed(2);
+                //$("#tooltip").html("time=" + x + " value=" + y)
+                //$("#tooltip").html(y + item.series.color)
+                $("#tooltip").html(y)
+                        .css({top: item.pageY+5, left: item.pageX+5, "background-color": item.series.color})
+                        // If you want to fade the BG independent of the text then you can edit the contents
+                        // of item.series.color and set it to rgba(r,g,b,a) instead of rgb(r,g,b)
+                        .fadeIn(200);
+          } else {
+                        $("#tooltip").hide();
+          }
+        });
+
+  }
+
+  //--------------------------------------------------------------------------------------
+  //
+  //--------------------------------------------------------------------------------------
+  $("#graph").bind("plotselected", function (event, ranges) { start = ranges.xaxis.from; end = ranges.xaxis.to; vis_feed_data(); });
+  //----------------------------------------------------------------------------------------------
+  // Operate buttons
+  //----------------------------------------------------------------------------------------------
+  $("#zoomout").click(function () {timeWindow *= 2.0; start=middle-(timeWindow/2); end=middle+(timeWindow/2); vis_feed_data();}); 
+  $("#zoomin").click(function ()  {timeWindow *= 0.5; start=middle-(timeWindow/2); end=middle+(timeWindow/2); vis_feed_data();}); 
+  $('#right').click(function () {var shiftsize = timeWindow * 0.2; start += shiftsize; end += shiftsize; middle = start + 0.5 * timeWindow; vis_feed_data();});
+  $('#left').click(function ()  {var shiftsize = timeWindow * 0.2; start -= shiftsize; end -= shiftsize; middle = start + 0.5 * timeWindow;vis_feed_data();});
+  $('.time').click(function () {end = (new Date()).getTime(); timeWindow = 3600000*24*($(this).attr("time")); start = end-timeWindow; middle = start + 0.5 * timeWindow; vis_feed_data();});
+  //-----------------------------------------------------------------------------------------------
+</script>
+
+    </div>
+  </body>
+</html>

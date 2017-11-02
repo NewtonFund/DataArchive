@@ -14,6 +14,8 @@
     (3) Database without index
 '''
 
+import os
+import inspect
 import time
 import numpy as np
 import psycopg2  
@@ -21,12 +23,12 @@ from matplotlib.pyplot import *
 ion()
 
 # Get output path if provided, default at ~/Desktop
-current_file = __file__
 try:
     output_path = argv[1]
 except:
-    real_path = os.path.realpath(current_file)  # /home/user/test/my_script.py
-    output_path = os.path.dirname(real_path) + '/output/'
+    filename = inspect.getframeinfo(inspect.currentframe()).filename
+    output_path = os.path.dirname(os.path.abspath(filename)) + '/output/'
+
 
 # Equatorial coordinates of the Galactic Centre
 ra_gc = 266.41683

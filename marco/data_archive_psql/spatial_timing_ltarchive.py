@@ -4,7 +4,7 @@
     File name: spatial_timing_ltarchive.py
     Prepared by: MCL
     Date created: 9/8/2017
-    Date last modified: 16/8/2017
+    Date last modified: 2/11/2017
     Python Version: 2.7
 
     This script compares the run time of PostgreSQL queries by position,
@@ -30,10 +30,12 @@ from matplotlib import pyplot as plt
 pq = PsqlQuery()
 
 # Get output path if provided, default at ~/Desktop
+current_file = __file__
 try:
     output_path = argv[1]
 except:
-    output_path = os.path.expanduser('~') + "/Desktop/"
+    real_path = os.path.realpath(current_file)  # /home/user/test/my_script.py
+    output_path = os.path.dirname(real_path) + '/output/'
 
 # Equatorial coordinates of the Galactic Centre
 ra_gc = 266.41683

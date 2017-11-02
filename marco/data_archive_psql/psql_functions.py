@@ -9,6 +9,9 @@ class PsqlQuery(object):
     '''
 
     def __init__(self):
+        '''
+        Nothing to declare
+        '''
         pass
 
     def format_query(self, x):

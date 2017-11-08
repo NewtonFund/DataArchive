@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="scatterplot">
+    <!--  Adding the svg element -->
+    <svg id="visualisation" width=800 height=500>
+    </svg>
+    <!--  d3 from d3js webpage -->
+    <script src="http://d3js.org/d3.v3.min.js" charset="utf-8">
+    </script>
+    <div align="center">
+      <input type="checkbox" checked='checked' class="messageCheckbox" value="drawLinePlot"> Line plot
+    </div>
+    <!-- Load the menu bar options -->
+    </script>
+    <script>
+      // Set display variable
+      var MARGINS_MENU = {
+        top: 50,
+        right: 50,
+        bottom: 50,
+        left: 75
+      };
+      var WIDTH = 800 - MARGINS_MENU.left - MARGINS_MENU.right
+      var HEIGHT = 500 - MARGINS_MENU.top - MARGINS_MENU.bottom
+        // SVG
+      var vis_menubar = d3.select("body").attr("align", "center")
+      var vis_menu = d3.select("#visualisation").attr("align", "center")
+      d3.csv('../pics/fullfits.dat', function(dataset) {
+        var selectData = []
+        var numberOfKeys = parseInt(Object.keys(dataset[0]).length)
+        var headerNames = d3.keys(dataset[0]);
+        for (var i = 0; i < numberOfKeys; i++) {
+          selectData[i] = {
+            'text': headerNames[i],
+            'headername': headerNames[i]
+          }
+        }
+        dataset.forEach(function(d) {
+          for (var i = 0; i < numberOfKeys; i++) {
+            d[headerNames[i]] = parseFloat(d[headerNames[i]]);
+            if (isNaN(d[headerNames[i]])) {
+              d[headerNames[i]] = 0
+            }
+            if ((i == 25) && (d[headerNames[i]] > 900)) {
+              d[headerNames[i]] = 0.
+            }
+            if ((i == 30) && (d[headerNames[i]] < 250)) {
+              d[headerNames[i]] = 250.
+            }
+            if ((i == 31) && (d[headerNames[i]] < 250)) {
+              d[headerNames[i]] = 250.
+            }
+          }
+        });
+
+        var exptimemax = d3.max(dataset, function(d) {
+          return d[headerNames[2]]
+        });
+
+        var exptimemin = d3.min(dataset, function(d) {
+          return d[headerNames[2]]
+        });
+
+        //Append a defs (for definition) element to your SVG
+        var defs = vis_menu.append("defs");
+
+        //Append a linearGradient element to the defs and give it a unique id
+        var linearGradient = defs.append("linearGradient")
+          .attr("id", "linear-gradient")
+          .attr("x1", "0%")
+          .attr("y1", "0%")
+          .attr("x2", "0%")
+          .attr("y2", "100%");
+
+        linearGradient.append("stop")
+          .attr("offset", "0%")
+          .attr("stop-color", perc2color(100)); //light blue
+
+        //Set the color for the end (100%)
+        linearGradient.append("stop")
+          .attr("offset", "100%")
+          .attr("stop-color", perc2color(0)); //dark blue
+
+        //Draw the rectangle and fill with gradient
+        vis_menu.append("rect")
+          .attr("width", 20)
+          .attr("height", HEIGHT)
+          .style("fill", "url(#linear-gradient)")
+          .attr("x", WIDTH * 1.05)
+          .attr("y", 50);
+
+        //Set scale for z-axis
+        var zScale = d3.scale.linear()
+          .range([0, HEIGHT])
+          .domain([exptimemax, exptimemin]);
+
+        //Define z-axis
+        var zAxis = d3.svg.axis()
+          .orient("right")
+          .ticks(10) //Set rough # of ticks
+          .scale(zScale);
+
+        var colorbar = vis_menu.append("g")
+          .attr("class", "axis") //Assign "axis" class
+          .attr("transform", "translate(" + (WIDTH * 1.05 +
+            20) + "," + (50) + ")")
+          .call(zAxis);
+
+
+
+        // Select X-axis variable
+        var span = vis_menubar.append('span')
+          .text('Select X-Axis')
+        var xInput = vis_menubar.append('select') // Getting the user input
+          .attr('id', 'xSelect')
+          .on('change', function() {
+            xChange.call(this)
+            xyChange.call(this) // Dyanmic display
+          })
+          .selectAll('option')
+          .data(selectData) // Provide the options
+          .enter()
+          .append('option')
+          .attr('value', function(d) {
+            // Native header name
+            return d.headername;
+          })
+          .property('selected', function(d) {
+            return d.headername == headerNames[1];
+          })
+          .text(function(d) {
+            // Display name
+            return d.text;
+          })
+        vis_menubar.append('br')
+
+        // Select Y-axis variable
+        var span = vis_menubar.append('span')
+          .text('Select Y-Axis: ')
+        var yInput = vis_menubar.append('select')
+          .attr('id', 'ySelect')
+          .on('change', function() {
+            yChange.call(this)
+            xyChange.call(this) // Dyanmic display
+          })
+          .selectAll('option')
+          .data(selectData)
+          .enter()
+          .append('option')
+          .attr('value', function(d) {
+            return d.headername;
+          })
+          .property('selected', function(d) {
+            return d.headername == headerNames[25];
+          })
+          .text(function(d) {
+            return d.text;
+          })
+        vis_menubar.append('br')
+
+
+        // Select the colour scale based on the given variable
+        var span = vis_menubar.append('span')
+          .text('Select colour scale: ')
+        var zInput = vis_menubar.append('select') // Getting the user input
+          .attr('id', 'zSelect')
+          .on('change', function() {
+            zChange.call(this) // Dyanmic display
+          })
+          .selectAll('option')
+          .data(selectData) // Provide the options
+          .enter()
+          .append('option')
+          .attr('value', function(d) {
+            // d = selectData
+            return d.headername;
+            // Native header name
+          })
+          .property('selected', function(d) {
+            return d.headername == headerNames[2];
+          })
+          .text(function(d) {
+            // Display name
+            return d.text;
+          })
+        vis_menubar.append('br')
+
+
+
+
+        // Get the scaling of the x-axis
+        var xScale = d3.scale.linear()
+          .range([0, WIDTH * 0.9])
+          .domain([
+            d3.min(dataset, function(d) {
+              return d[headerNames[1]]
+            }),
+            d3.max(dataset, function(d) {
+              return d[headerNames[1]]
+            })
+          ])
+          // Get the scaling of the y-axis
+        var yScale = d3.scale.linear()
+          .range([HEIGHT, 0])
+          .domain([
+            d3.min(dataset, function(d) {
+              return d[headerNames[25]]
+            }),
+            d3.max(dataset, function(d) {
+              return d[headerNames[25]]
+            })
+          ])
+        var menu_svg = vis_menu.append('svg')
+          .attr('height', HEIGHT + MARGINS_MENU.top + MARGINS_MENU.bottom)
+          .attr('width', WIDTH + MARGINS_MENU.left + MARGINS_MENU.right)
+          .append('g')
+          .attr('transform', 'translate(' + MARGINS_MENU.left + ',' +
+            MARGINS_MENU.top + ')')
+          /* axis().scale - sets the scale and returns the axis
+              orient - sets the tick direction relative to the axis */
+        var xAxis = d3.svg.axis()
+          .scale(xScale)
+          .orient('bottom')
+          .innerTickSize(-HEIGHT)
+          .outerTickSize(0)
+          .tickPadding(10)
+        var yAxis = d3.svg.axis()
+          .scale(yScale)
+          .orient("left")
+          .innerTickSize(-WIDTH)
+          .outerTickSize(0)
+          .tickPadding(10)
+          /* Draw the scatter plot */
+        var circles = menu_svg.selectAll('circle')
+          .data(dataset)
+          .enter()
+          .append('circle')
+          .attr('cx', function(d) {
+            return xScale(d[headerNames[1]])
+          })
+          .attr('cy', function(d) {
+            return yScale(d[headerNames[25]])
+          })
+          .attr('r', '2')
+          .attr('stroke', 'black')
+          .attr('stroke-width', 0)
+          // When the cursor moves over points
+          .on('mouseover', function() {
+            d3.select(this)
+              .transition()
+              .duration(200)
+              .attr('r', 5)
+              .attr('stroke-width', 1)
+          })
+          .on('mouseout', function() {
+            d3.select(this)
+              .transition()
+              .duration(200)
+              .attr('r', 2)
+              .attr('stroke-width', 0)
+          })
+          //.style('fill', 'steelblue')
+          .style('fill', function(d) {
+            return perc2color(100 * (exptimemax - d[headerNames[2]]) / (
+              exptimemax - exptimemin))
+          })
+          .append('title') // Tooltip
+
+        // X-axis
+        menu_svg.append('g')
+          .attr('class', 'axis')
+          .attr('id', 'xAxis')
+          .attr('transform', 'translate(0,' + HEIGHT + ')')
+          .call(xAxis)
+          .append('text') // X-axis Label
+          .attr('id', 'xAxisLabel')
+          .attr('y', 30)
+          .attr('x', WIDTH / 2)
+          .attr('dy', '.71em')
+          .style('text-anchor', 'middle')
+          .text('mjd')
+          // Y-axis
+        menu_svg.append('g')
+          .attr('class', 'axis')
+          .attr('id', 'yAxis')
+          .call(yAxis)
+          .append('text') // y-axis Label
+          .attr('id', 'yAxisLabel')
+          .attr('transform', 'rotate(-90)')
+          .attr('x', -HEIGHT / 2)
+          .attr('y', -70)
+          .attr('dy', '.71em')
+          .style('text-anchor', 'middle')
+          .text('l1seesec')
+
+        function yChange() {
+          var value = this.value // get the new y value
+          var display = this.options[this.selectedIndex].text
+          yScale // change the yScale
+            .domain([
+            d3.min(dataset, function(d) {
+              return d[value]
+            }),
+            d3.max(dataset, function(d) {
+              return d[value]
+            })
+          ])
+          yAxis.scale(yScale) // change the yScale
+          d3.select('#yAxis') // redraw the yAxis
+            .transition().duration(500)
+            .call(yAxis)
+          d3.select('#yAxisLabel') // change the yAxisLabel
+            .transition().duration(500)
+            .text(display)
+          d3.selectAll('circle') // move the circles
+            .transition().duration(100)
+            .delay(function(d, i) {
+              return i * 0.5 * (2000 / dataset.length)
+            })
+            .attr('cy', function(d) {
+              return yScale(d[value])
+            })
+        }
+
+        function xChange() {
+            var value = this.value // get the new x value
+            var display = this.options[this.selectedIndex].text
+            xScale // change the xScale
+              .domain([
+              d3.min(dataset, function(d) {
+                return d[value]
+              }),
+              d3.max(dataset, function(d) {
+                return d[value]
+              })
+            ])
+            xAxis.scale(xScale) // change the xScale
+            d3.select('#xAxis') // redraw the xAxis
+              .transition().duration(500)
+              .call(xAxis)
+            d3.select('#xAxisLabel') // change the xAxisLabel
+              .transition().duration(500)
+              .text(display)
+            d3.selectAll('circle') // move the circles
+              .transition().duration(500)
+              .delay(function(d, i) {
+                return i * 0.5 * (2000 / dataset.length)
+              })
+              .attr('cx', function(d) {
+                return xScale(d[value])
+              })
+          }
+          /* line function */
+        var lineGen = d3.svg.line()
+          .x(function(d) {
+            return xScale(d[headerNames[1]]);
+          })
+          .y(function(d) {
+            return yScale(d[headerNames[25]]);
+          })
+          .interpolate("basis");
+
+        function zChange() {
+          var value = this.value // get the new z value
+          var display = this.options[this.selectedIndex].text
+          var valuemax = d3.max(dataset, function(d) {
+            return d[value]
+          });
+          var valuemin = d3.min(dataset, function(d) {
+            return d[value]
+          });
+          d3.selectAll('circle') // move the circles
+            .style('fill', function(d) {
+              return perc2color((valuemax - d[value]) /
+                (valuemax - valuemin) * 100)
+            })
+
+          //Set scale for z-axis
+          var zScale = d3.scale.linear()
+            .range([0, HEIGHT])
+            .domain([valuemax, valuemin]);
+
+          //Define z-axis
+          var zAxis = d3.svg.axis()
+            .orient("right")
+            .ticks(10) //Set rough # of ticks
+            .scale(zScale);
+
+          colorbar
+            .attr("class", "axis") //Assign "axis" class
+            .attr("transform", "translate(" + (WIDTH *
+              1.05 + 20) + "," + (50) + ")")
+            .call(zAxis);
+
+        }
+
+
+
+        /* Draw the line */
+        var drawLinePlot = menu_svg.append('g').classed('drawLinePlot',
+          true);
+        drawLinePlot.append('path')
+          .attr('id', 'lineplots')
+          .attr('d', lineGen(dataset))
+          .attr('stroke', 'steelblue')
+          .attr('stroke-width', 1)
+          .attr('fill', 'none');
+
+        function xyChange() {
+          var value1 = d3.selectAll('#xSelect')[0][0].value // get the new x value
+          var value2 = d3.selectAll('#ySelect')[0][0].value // get the new y value
+          var lineGenUpdate = d3.svg.line()
+            .x(function(d) {
+              return xScale(d[value1]);
+            })
+            .y(function(d) {
+              return yScale(d[value2]);
+            })
+            .interpolate("basis");
+          d3.selectAll('#lineplots') // move the line, input is class name
+            .transition().duration(100)
+            .attr('d', lineGenUpdate(dataset));
+        }
+      });
+
+      function perc2color(perc) {
+        var r, g, b = 0;
+        r = 255;
+        g = Math.round(2.55 * perc);
+        var h = r * 0x10000 + g * 0x100 + b * 0x1;
+        return '#' + ('000000' + h.toString(16)).slice(-
+          6);
+      }
+
+
+
+      // Event listener
+      d3.selectAll('.messageCheckbox').on('click', function() {
+        var value = this.value,
+          checked = this.checked;
+        d3.select('.' + value).classed('hidden', !checked);
+        // .hidden is in style.css
+      });
+    </script>
+  </div>
+  <p>* non-numeric entries of envtemp0 and envtemp1 are set at 250</p>
+</body>
+
+</html>

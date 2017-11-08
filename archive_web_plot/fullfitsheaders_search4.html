@@ -1,0 +1,310 @@
+<HTML>
+<HEAD>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<LINK REL="stylesheet" TYPE="text/css" HREF="/newmain.css">
+<title>FITS header Search Tool</title>
+
+<SCRIPT LANGUAGE=JavaScript>
+previousdatetype = 2;
+
+function parse_datetype(object){
+  if(object.selectedIndex==0){
+    // Help
+    alert("Time of observation may be selected by UTC date-and-time or modified Julian day. \n\nMJD: A decimal number. (MJD=JD-2400000.5)\n\nDATE: Date and time in UTC. The date field is fairly tolerant of format.\n\tYYYY-MM-DD HH:MM:SS\n\tYYYY/MM/DD HH:MM\n\tYYYYMMDD\nare all valid.\n\nNIGHT OF: Find observations made on the night of the specified date. This is the local civil date at the observatory, not UTC. The required format is very specific; YYYYMMDD. You can only search for a single night at a time.");
+    object.selectedIndex = previousdatetype;
+//  }else if(object.selectedIndex==1){
+//    // UT Date
+//    if (previousdatetype != object.selectedIndex) searchform.startdate.value = "";
+//    if (previousdatetype != object.selectedIndex) searchform.enddate.value = "";
+//    previousdatetype = object.selectedIndex;
+//  }
+//  else if(object.selectedIndex==2){
+//    // Night of
+//    if (previousdatetype != object.selectedIndex) searchform.startdate.value = "YYYYMMDD";
+//    searchform.enddate.value = "UNUSED";
+//    previousdatetype = object.selectedIndex;
+//  }
+//  else if(object.selectedIndex==3){
+//    // MJD 
+//    if (previousdatetype != object.selectedIndex) searchform.startdate.value = "";
+//    if (previousdatetype != object.selectedIndex) searchform.enddate.value = "";
+//    previousdatetype = object.selectedIndex;
+  }
+  else
+    previousdatetype = object.selectedIndex;
+}
+
+</SCRIPT> 
+</head>
+ <BODY BGCOLOR=#FFFFFF>
+ <A HREF=http://telescope.livjm.ac.uk/><IMG SRC=/pics/backgrounds/75pix_padding.png ALT='Liverpool Telescope' BORDER=0></A><BR>
+  <TABLE BORDER=0 ALIGN=CENTER>
+  <TR>
+  <TD ALIGN=CENTER>
+    <!-- <A HREF=http://telescope.livjm.ac.uk/><IMG SRC=/pics/banner3.jpg BORDER=0 ALIGN=TOP></A> <BR> -->
+    <shadowbanner>SelectedKeysNum Archive</shadowbanner><BR>
+  </TD>
+  <TR><TD ALIGN=CENTER></TD></TR>
+  </TR>
+  </TABLE>
+<BR>
+
+  <FORM id="searchform" name="searchform" ACTION="fullfitsheaders_search4.php" METHOD=POST NAME=searchform>
+  <P>
+  <CENTER>
+<!--
+  <TABLE BORDER=1>
+  <TR>
+    <TD ALIGN=CENTER>
+      <TABLE BORDER=0 CELLSPACING=3 CELLPADDING=0 ALIGN=CENTER>
+      <TR>
+	<TD ALIGN=CENTER COLSPAN=6> 
+		<A HREF=fullfitsheaders_searchformhelp.html#position><shadowbanner>Target Position</shadowbanner></A>
+	</TD>
+      </TR>
+      <TR><TD colspan=3></TD></TR>
+      <TR>
+	<TD ALIGN=LEFT>Target Name </TD>
+        <TD ALIGN=LEFT COLSPAN=2> <INPUT NAME=targname SIZE=40 VALUE="" > </TD>
+      </TR>
+      <TR>
+      <TD> 
+-->
+
+<!-- <SELECT NAME=co1type SIZE=1 onChange='if(parse_cotype(this)>0)co2type.selectedIndex=this.selectedIndex'>
+<OPTION VALUE=equatorial SELECTED>Equatorial (RA,dec J2000)
+<OPTION VALUE=galactic >Galactic (l,b) Not Available
+</SELECT> -->
+<!--
+       <input type=hidden name=co1type value=equatorial>
+       <a href=fullfitsheaders_searchformhelp.html#position>Equatorial (RA,dec J2000)</a>
+       </TD>
+       <TD ALIGN=LEFT> <INPUT NAME=targco1 SIZE=20 VALUE="" onFocus='toaddpm=this' onChange='if(co1type.selectedIndex<=2)previousco1=this.value' title='Sexagesimal hours (HH:MM:SS.s or HH MM SS.s) or decimal degrees (DDD.dddd)'> </TD>
+       <TD ALIGN=LEFT> <INPUT NAME=targco2 SIZE=20 VALUE="" onFocus='toaddpm=this' onChange='if(co2type.selectedIndex<=2)previousco2=this.value' title='Sexagesimal or decimal degrees (DD:MM:SS.s DD MM SS.s or DDDD.dddd)'> </TD>
+   </TR>
+-->
+
+<!--
+  <TR>
+    <TD ALIGN=RIGHT><B><A HREF=/searchformhelp.html#targname>Resolve name</A></B> </TD>
+    <TD></TD>
+    <TD ALIGN=LEFT> <INPUT NAME=resoltargname SIZE=20 VALUE="" onChange='targco1.value="";targco2.value="";'> </TD>
+    <TD ALIGN=RIGHT> <A HREF=/searchformhelp.html#resolver><B>using resolver</B></A> </TD>
+    <TD ALIGN=LEFT>
+	<SELECT name=resoltype SIZE=1>
+        <OPTION value=ned SELECTED>NED
+        <OPTION value=simbad >SIMBAD
+	</SELECT>
+	<INPUT TYPE=SUBMIT NAME=resolnow VALUE="Resolve name now">
+    </TD>
+    <TD></TD>
+  </TR>
+-->
+<!--
+    </TABLE>
+    </TD>
+    </TR>
+    </TABLE>
+    </CENTER>
+    </P>
+<P>
+<center>
+<BR>
+-->
+
+<!--
+Fields to extract from fullfitsheaders: <INPUT NAME=fieldstoget SIZE=40 VALUE="" title='Fields to get'><BR>
+Enter a comma separated  x,y parameters to be plotted,
+for example, <tt>MJD,SEEING</tt><BR>
+To interrogate the database for a 
+<a href="fullfitsheaders_describe.php"> full list of FITS header keywords</a>.
+-->
+<BR>
+</center>
+</P>
+
+  <P>
+  <CENTER>
+  <TABLE BORDER=1 >
+  <TR>
+  <TD ALIGN=CENTER>
+      <TABLE border=0 CELLSPACING=0 CELLPADDING=0>
+      <tr><td ALIGN=CENTER COLSPAN=6>
+	<!-- <A HREF=fullfitsheaders_searchformhelp.html#obs_crit><IMG SRC=/pics/observationalcriteria.gif ALT="Observational Criteria" BORDER=0></A></FONT>  -->
+	<A HREF=fullfitsheaders_searchformhelp.html#obs_crit><shadowbanner>Observational Criteria</shadowbanner></A> 
+      </td> </tr>
+<!--      <TR><TD colspan=3>Date criteria currently ignored in search</TD></TR> -->
+
+<tr><td colspan=3 align=left>In general you should use just one of the following time constraint searches.<br>
+<!--If you use more than one, the constraints are combined with an AND operator so you will only get results if the constraints overlap. -->
+</td></tr>  
+      <TR>
+      <TD ALIGN=right>
+        Time range <SELECT name=rangedatetype SIZE=1 onChange='parse_datetype(this)'>
+<!--	  <OPTION>Helpi -->
+<!--<OPTION value=date>Date-->
+<!--<OPTION value=nightof SELECTED>Single 'Night of' -->
+<OPTION value=mjd SELECTED>MJD
+</SELECT></TD>
+<TD ALIGN=LEFT>Start: <INPUT NAME=startdate SIZE=20 VALUE="" onFocus='toaddpm=this' title='See detailed Help in drop-down list on left'> </TD>
+<TD ALIGN=LEFT>End: <INPUT NAME=enddate SIZE=20 VALUE="" onFocus='toaddpm=this' title='See detailed Help in drop-down list on left'> </TD>
+</TR>
+<!--
+<TR>
+  <TD ALIGN=right>Closest in time to <SELECT name=closestdatetype SIZE=1 onChange='parse_datetype(this)'>
+  <OPTION>Help
+  <OPTION value=date>Date
+  <OPTION value=mjd SELECTED>MJD
+  </SELECT></TD>
+  <TD ALIGN=right><INPUT NAME=closestdate SIZE=20 VALUE="" onFocus='toaddpm=this' title='See detailed Help in drop-down list on left'> </TD>
+  <td><b>Not yet available</b></td>
+</TR>
+-->
+<!-- <tr><td colspan=3 align=center>and</td></tr> -->
+<!--
+<TR><TD>Only images taken on night of&nbsp;</TD><TD align=right><input name=nightofdate size=20 value="" title='See detailed Help in "Time Range" drop-down list'></TD><TD>in the form YYYYMMDD</TD></TR>
+-->
+<TR><TD colspan=3 align=center>&nbsp;</TD></TR>
+<!--
+      <TR>
+      <TD ALIGN=RIGHT NOWRAP > </TD>
+<td ALIGN=TOP>
+<A HREF=fullfitsheaders_searchformhelp.html#instrument><B> Instrument </B></A>
+<SELECT NAME=instrument>
+ <OPTION VALUE='SkyCamT' >&nbsp;SkyCamT only
+ <OPTION VALUE='SkyCamA' >&nbsp;SkyCamA only
+ <OPTION VALUE='Any' SELECTED>&nbsp;Either camera
+</SELECT>
+</TD>
+<td></td>
+</TR>
+-->
+<!-- <INPUT TYPE=HIDDEN NAME=telescope VALUE=lt> -->
+
+<TR><TD colspan=3 align=center>&nbsp;</TD></TR>
+      </TABLE>
+      </TD>
+      </TR>
+      </TABLE>
+      </CENTER>
+      </P>
+<P>
+<center>
+<BR>
+Extra search criteria: <INPUT NAME=extra SIZE=40 VALUE="" title='Fields to get'><BR>
+Add extra SQL criteria here. You need to start with 'AND '.<BR> 
+<BR>
+</center>
+</P>
+  <P>
+  <CENTER>
+  <TABLE border=1 width=70%>
+  <TR>
+  <TD COLSPAN=2 ALIGN=CENTER>
+    <TABLE BORDER=0>
+      <TR>
+	<!-- <td COLSPAN=2 ALIGN=CENTER><IMG SRC=/pics/outputformatting.gif ALT="Formatting of Query Results"></td> -->
+        <TD COLSPAN=2 ALIGN=CENTER><shadowbanner>Output Formatting</shadowbanner></TD>
+      <TR>
+      <TR><TD colspan=2>Untested. No idea what this will do. Might work?</TD></TR>
+      <TR ALIGN=CENTER>
+	<TD ALIGN=RIGHT> First sort results by : </TD>
+	<TD ALIGN=LEFT>
+	  <SELECT NAME=sortby1> SIZE=1
+
+<!-- <OPTION value="">	&nbsp; <OPTION value=sep > Distance from image centre (NA) -->
+<!-- <OPTION value=ra_cent > Right ascension -->
+<!-- <OPTION value=dec_cent >  Declination -->
+<!-- <OPTION value=gall > Galactic longitude <B>NA</B> --> 
+<!-- <OPTION value=galb > Galactic latitude <B>NA</B> -->
+<!-- <OPTION value="altitude desc" >  Airmass (smallest first) -->
+ <OPTION value="mjd desc" SELECTED> Date (recent first)
+ <OPTION value="mjd asc" > Date (oldest first)
+<!-- <OPTION value=instrume > Instrument -->
+ </SELECT>
+	</TD>
+      </TR>
+<!--
+      <TR ALIGN=CENTER>
+	<TD ALIGN=RIGHT> Then sort by : </TD>
+	<TD ALIGN=LEFT>
+	  <SELECT NAME=sortby2> SIZE=1
+	    <OPTION value="">	&nbsp;
+	    <OPTION value=ra_cent >   Right ascension
+	    <OPTION value=dec_cent >  Declination
+	    <OPTION value="altitude desc" >  Airmass (smallest first)
+	    <OPTION value="mjd desc" > Date (recent first)
+	    <OPTION value="mjd asc" > Date (oldest first)
+	    <OPTION value=instrume > Instrument
+	  </SELECT>
+	</TD>
+      </TR>
+-->
+    </TABLE>
+  </TD>
+  </TR>
+  <TR>
+  <TD ALIGN=CENTER COLSPAN=2> <a href=fullfitsheaders_searchformhelp.html#max>Maximum number of records to return:</a>
+<INPUT VALUE=100 SIZE=5 NAME=max_rows> rows.
+ </TD>
+  </TR>
+    <TR>
+      <TD ALIGN=CENTER> <INPUT TYPE=SUBMIT VALUE="Submit your search"> </TD>
+      <TD ALIGN=CENTER> 
+       <a href=fullfitsheaders_search.html>Reset form to defaults</a>    	
+    </TD>
+    </TR>
+
+    </TABLE>
+    </CENTER>
+    </P>
+    </FORM>
+
+    <HR>
+<p>
+<b>Equatorial Coordinates:</b><br>
+RA is sexagesimal hours (HH MM SS.ss or HH:MM:SS.ss) or decimal degrees (DDD.dd)<br>
+dec is sexagesimal or decimal degrees (DD MM SS.ss, DD:MM:SS.ss or DDD.dd)<br>
+</p>
+<p>
+<b>Date of observation:</b><br>
+MJD is a decimal number. (MJD=JD-2400000.5) <br>
+Date is Year Month Day. YYYY-MM-DD, YYYYMMDD, YYYY/MM/DD are all valid though YYYY MM DD is not.<br>
+Time is 24-hour, colon separated sexagesimal hours. (HH:MM:SS or HH:MM)<br>
+</p>
+<p>
+<b>Declination</b>
+<tt>DEC</tt> is a reserved keyword in MySQL, so if you want to include keyword DEC in any search you must back-quote it.
+E.g., <tt>AND `dec`&gt;0</tt>.
+</p>
+<p>
+<b>Keywords with hyphens</b>
+MySQL interprets a hyphen as the -ve operator so any reference to a FITS keyword containing hyphens
+needs to be back-quoted. E.g., <tt>AND `CAT-EQUI`=1950</tt>. Without the quotes, MySQL will try to 
+find fields named CAT and EQUI which differ by 1950.
+</p>
+<!--<p>
+See <a href=fullfitsheaders_searchformhelp.html>help page</a> for more details.<br>
+</p> -->
+
+<HR>
+<!--
+<P>
+All images are copyright by the Liverpool Telescope and permission is granted for educational or non-commercial use.
+Where appropriate please credit images to the Liverpool Telescope Project. For use in scholarly work, please see also 
+<A HREF=http://telescope.livjm.ac.uk/Ack/>Acknowledgements</A>.
+</P>
+<p>
+This service uses tools provided by Astrometry.net. For more details visit <a href=http://astrometry.net/>http://astrometry.net/</a>.
+</p>
+-->
+
+<IMG SRC=/pics/jmu_vs.gif ALIGN=RIGHT><BR>
+<FONT SIZE=-1>
+<I>Maintenance: <A HREF="mailto:LT Skycam Archive<r.j.smith@ljmu.ac.uk>">Robert J Smith</A> (r.j.smith@ljmu.ac.uk) and Andrzej S Piascik (a.s.piascik@ljmu.ac.uk)<BR>Astrophysics Research Institute,<BR>Liverpool John Moores University<BR><BR>
+Thu Apr 16 18:07:44 BST 2016
+</I><BR>
+</FONT>
+
+</BODY>
+</HTML>

@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 '''
-    File name: pgsphere_btree_timing_ltarchive.py
+    File name: pgsphere_gin_timing_ltarchive.py
     Prepared by: MCL
     Date created: 14/8/2017
     Date last modified: 2/11/2017
@@ -10,7 +10,7 @@
     This script compares the run time of PostgreSQL queries with a positional
     and a instrumental selection, 4 cases are compared:
     (1) Database with only spatial index on positions
-    (2) Database with only B-Tree index on instruments
+    (2) Database with only GIN index on instruments
     (3) Database with both indexes
     (4) Database without any index
 '''
@@ -73,38 +73,38 @@ radii_pgsphere =\
 # Create zero arrays for the number of results and execution times
 time_pgsphere_only_gc = np.zeros((n_repeat, n_interval))
 n_results_pgsphere_only_gc = np.zeros((n_repeat, n_interval))
-time_btree_only_gc = np.zeros((n_repeat, n_interval))
-n_results_btree_only_gc = np.zeros((n_repeat, n_interval))
-time_pgsphere_btree_gc = np.zeros((n_repeat, n_interval))
-n_results_pgsphere_btree_gc = np.zeros((n_repeat, n_interval))
+time_gin_only_gc = np.zeros((n_repeat, n_interval))
+n_results_gin_only_gc = np.zeros((n_repeat, n_interval))
+time_pgsphere_gin_gc = np.zeros((n_repeat, n_interval))
+n_results_pgsphere_gin_gc = np.zeros((n_repeat, n_interval))
 
 time_pgsphere_only_gnp = np.zeros((n_repeat, n_interval))
 n_results_pgsphere_only_gnp = np.zeros((n_repeat, n_interval))
-time_btree_only_gnp = np.zeros((n_repeat, n_interval))
-n_results_btree_only_gnp = np.zeros((n_repeat, n_interval))
-time_pgsphere_btree_gnp = np.zeros((n_repeat, n_interval))
-n_results_pgsphere_btree_gnp = np.zeros((n_repeat, n_interval))
+time_gin_only_gnp = np.zeros((n_repeat, n_interval))
+n_results_gin_only_gnp = np.zeros((n_repeat, n_interval))
+time_pgsphere_gin_gnp = np.zeros((n_repeat, n_interval))
+n_results_pgsphere_gin_gnp = np.zeros((n_repeat, n_interval))
 
 time_pgsphere_only_r1 = np.zeros((n_repeat, n_interval))
 n_results_pgsphere_only_r1 = np.zeros((n_repeat, n_interval))
-time_btree_only_r1 = np.zeros((n_repeat, n_interval))
-n_results_btree_only_r1 = np.zeros((n_repeat, n_interval))
-time_pgsphere_btree_r1 = np.zeros((n_repeat, n_interval))
-n_results_pgsphere_btree_r1 = np.zeros((n_repeat, n_interval))
+time_gin_only_r1 = np.zeros((n_repeat, n_interval))
+n_results_gin_only_r1 = np.zeros((n_repeat, n_interval))
+time_pgsphere_gin_r1 = np.zeros((n_repeat, n_interval))
+n_results_pgsphere_gin_r1 = np.zeros((n_repeat, n_interval))
 
 time_pgsphere_only_r2 = np.zeros((n_repeat, n_interval))
 n_results_pgsphere_only_r2 = np.zeros((n_repeat, n_interval))
-time_btree_only_r2 = np.zeros((n_repeat, n_interval))
-n_results_btree_only_r2 = np.zeros((n_repeat, n_interval))
-time_pgsphere_btree_r2 = np.zeros((n_repeat, n_interval))
-n_results_pgsphere_btree_r2 = np.zeros((n_repeat, n_interval))
+time_gin_only_r2 = np.zeros((n_repeat, n_interval))
+n_results_gin_only_r2 = np.zeros((n_repeat, n_interval))
+time_pgsphere_gin_r2 = np.zeros((n_repeat, n_interval))
+n_results_pgsphere_gin_r2 = np.zeros((n_repeat, n_interval))
 
 time_pgsphere_only_r3 = np.zeros((n_repeat, n_interval))
 n_results_pgsphere_only_r3 = np.zeros((n_repeat, n_interval))
-time_btree_only_r3 = np.zeros((n_repeat, n_interval))
-n_results_btree_only_r3 = np.zeros((n_repeat, n_interval))
-time_pgsphere_btree_r3 = np.zeros((n_repeat, n_interval))
-n_results_pgsphere_btree_r3 = np.zeros((n_repeat, n_interval))
+time_gin_only_r3 = np.zeros((n_repeat, n_interval))
+n_results_gin_only_r3 = np.zeros((n_repeat, n_interval))
+time_pgsphere_gin_r3 = np.zeros((n_repeat, n_interval))
+n_results_pgsphere_gin_r3 = np.zeros((n_repeat, n_interval))
 
 # Repeating the queries n_repeat times
 for j in range(n_repeat):
@@ -120,13 +120,13 @@ for j in range(n_repeat):
             "scircle(spoint(radians(" + str(ra_gc) + "), RADIANS(" +\
             str(dec_gc) + ")), RADIANS(" + str(radius) +\
             "))~coords AND \"INSTRUME\"=\'IO:I\';"
-        query_btree_only_gc =\
+        query_gin_only_gc =\
             "EXPLAIN ANALYSE SELECT * FROM allkeys_testing WHERE " +\
             "vincenty(" + str(dec_gc) + ", " + str(ra_gc) +\
             ", dec_degree, ra_degree) <= " + str(radius) +\
             " AND \"INSTRUME\"=\'IO:I\';"
-        query_pgsphere_btree_gc =\
-            "EXPLAIN ANALYSE SELECT * FROM allkeys_pgsphere_testing " +\
+        query_pgsphere_gin_gc =\
+            "EXPLAIN ANALYSE SELECT * FROM allkeys_testing_gin " +\
             "WHERE scircle(spoint(radians(" + str(ra_gc) +\
             "), RADIANS(" + str(dec_gc) + ")), RADIANS(" +\
             str(radius) + "))~coords AND \"INSTRUME\"=\'IO:I\';"
@@ -136,13 +136,13 @@ for j in range(n_repeat):
             "scircle(spoint(RADIANS(" + str(ra_gnp) + "), RADIANS(" +\
             str(dec_gnp) + ")), RADIANS(" + str(radius) +\
             "))~coords AND \"INSTRUME\"=\'IO:I\';"
-        query_btree_only_gnp =\
+        query_gin_only_gnp =\
             "EXPLAIN ANALYSE SELECT * FROM allkeys_testing WHERE " +\
             "vincenty(" + str(dec_gnp) + ", " + str(ra_gnp) +\
             ", dec_degree, ra_degree) <= " + str(radius) +\
             " AND \"INSTRUME\"=\'IO:I\';"
-        query_pgsphere_btree_gnp =\
-            "EXPLAIN ANALYSE SELECT * FROM allkeys_pgsphere_testing " +\
+        query_pgsphere_gin_gnp =\
+            "EXPLAIN ANALYSE SELECT * FROM allkeys_testing_gin " +\
             "WHERE scircle(spoint(radians(" + str(ra_gnp) +\
             "), RADIANS(" + str(dec_gnp) + ")), RADIANS(" +\
             str(radius) +\
@@ -153,13 +153,13 @@ for j in range(n_repeat):
             "scircle(spoint(RADIANS(" + str(ra_random_1) + "), RADIANS(" +\
             str(dec_random_1) + ")), RADIANS(" + str(radius) +\
             "))~coords AND \"INSTRUME\"=\'IO:I\';"
-        query_btree_only_r1 =\
+        query_gin_only_r1 =\
             "EXPLAIN ANALYSE SELECT * FROM allkeys_testing WHERE " +\
             "vincenty(" + str(dec_random_1) + ", " + str(ra_random_1) +\
             ", dec_degree, ra_degree) <= " + str(radius) +\
             " AND \"INSTRUME\"=\'IO:I\';"
-        query_pgsphere_btree_r1 =\
-            "EXPLAIN ANALYSE SELECT * FROM allkeys_pgsphere_testing " +\
+        query_pgsphere_gin_r1 =\
+            "EXPLAIN ANALYSE SELECT * FROM allkeys_testing_gin " +\
             "WHERE scircle(spoint(radians(" + str(ra_random_1) +\
             "), RADIANS(" + str(dec_random_1) + ")), RADIANS(" +\
             str(radius) +\
@@ -170,13 +170,13 @@ for j in range(n_repeat):
             "scircle(spoint(RADIANS(" + str(ra_random_2) + "), RADIANS(" +\
             str(dec_random_2) + ")), RADIANS(" + str(radius) +\
             "))~coords AND \"INSTRUME\"=\'IO:I\';"
-        query_btree_only_r2 =\
+        query_gin_only_r2 =\
             "EXPLAIN ANALYSE SELECT * FROM allkeys_testing WHERE " +\
             "vincenty(" + str(dec_random_2) + ", " + str(ra_random_2) +\
             ", dec_degree, ra_degree) <= " + str(radius) +\
             " AND \"INSTRUME\"=\'IO:I\';"
-        query_pgsphere_btree_r2 =\
-            "EXPLAIN ANALYSE SELECT * FROM allkeys_pgsphere_testing " +\
+        query_pgsphere_gin_r2 =\
+            "EXPLAIN ANALYSE SELECT * FROM allkeys_testing_gin " +\
             "WHERE scircle(spoint(radians(" + str(ra_random_2) +\
             "), RADIANS(" + str(dec_random_2) + ")), RADIANS(" +\
             str(radius) +\
@@ -187,13 +187,13 @@ for j in range(n_repeat):
             "scircle(spoint(RADIANS(" + str(ra_random_3) + "), RADIANS(" +\
             str(dec_random_3) + ")), RADIANS(" + str(radius) +\
             "))~coords AND \"INSTRUME\"=\'IO:I\';"
-        query_btree_only_r3 =\
+        query_gin_only_r3 =\
             "EXPLAIN ANALYSE SELECT * FROM allkeys_testing WHERE " +\
             "vincenty(" + str(dec_random_3) + ", " + str(ra_random_3) +\
             ", dec_degree, ra_degree) <= " + str(radius) +\
             " AND \"INSTRUME\"=\'IO:I\';"
-        query_pgsphere_btree_r3 =\
-            "EXPLAIN ANALYSE SELECT * FROM allkeys_pgsphere_testing " +\
+        query_pgsphere_gin_r3 =\
+            "EXPLAIN ANALYSE SELECT * FROM allkeys_testing_gin " +\
             "WHERE scircle(spoint(radians(" + str(ra_random_3) +\
             "), RADIANS(" + str(dec_random_3) + ")), RADIANS(" +\
             str(radius) +\
@@ -211,104 +211,104 @@ for j in range(n_repeat):
         # Run the queries and save the results in arrays
         n_results_pgsphere_only_gc[j][i], time_pgsphere_only_gc[j][i] =\
             pq.run_query(conn, query_pgsphere_only_gc)
-        n_results_btree_only_gc[j][i], time_btree_only_gc[j][i] =\
-            pq.run_query(conn, query_btree_only_gc)
-        n_results_pgsphere_btree_gc[j][i], time_pgsphere_btree_gc[j][i] =\
-            pq.run_query(conn, query_pgsphere_btree_gc)
+        n_results_gin_only_gc[j][i], time_gin_only_gc[j][i] =\
+            pq.run_query(conn, query_gin_only_gc)
+        n_results_pgsphere_gin_gc[j][i], time_pgsphere_gin_gc[j][i] =\
+            pq.run_query(conn, query_pgsphere_gin_gc)
 
         n_results_pgsphere_only_gnp[j][i], time_pgsphere_only_gnp[j][i] =\
             pq.run_query(conn, query_pgsphere_only_gnp)
-        n_results_btree_only_gnp[j][i], time_btree_only_gnp[j][i] =\
-            pq.run_query(conn, query_btree_only_gnp)
-        n_results_pgsphere_btree_gnp[j][i], time_pgsphere_btree_gnp[j][i] =\
-            pq.run_query(conn, query_pgsphere_btree_gnp)
+        n_results_gin_only_gnp[j][i], time_gin_only_gnp[j][i] =\
+            pq.run_query(conn, query_gin_only_gnp)
+        n_results_pgsphere_gin_gnp[j][i], time_pgsphere_gin_gnp[j][i] =\
+            pq.run_query(conn, query_pgsphere_gin_gnp)
 
         n_results_pgsphere_only_r1[j][i], time_pgsphere_only_r1[j][i] =\
             pq.run_query(conn, query_pgsphere_only_r1)
-        n_results_btree_only_r1[j][i], time_btree_only_r1[j][i] =\
-            pq.run_query(conn, query_btree_only_r1)
-        n_results_pgsphere_btree_r1[j][i], time_pgsphere_btree_r1[j][i] =\
-            pq.run_query(conn, query_pgsphere_btree_r1)
+        n_results_gin_only_r1[j][i], time_gin_only_r1[j][i] =\
+            pq.run_query(conn, query_gin_only_r1)
+        n_results_pgsphere_gin_r1[j][i], time_pgsphere_gin_r1[j][i] =\
+            pq.run_query(conn, query_pgsphere_gin_r1)
 
         n_results_pgsphere_only_r2[j][i], time_pgsphere_only_r2[j][i] =\
             pq.run_query(conn, query_pgsphere_only_r2)
-        n_results_btree_only_r2[j][i], time_btree_only_r2[j][i] =\
-            pq.run_query(conn, query_btree_only_r2)
-        n_results_pgsphere_btree_r2[j][i], time_pgsphere_btree_r2[j][i] =\
-            pq.run_query(conn, query_pgsphere_btree_r2)
+        n_results_gin_only_r2[j][i], time_gin_only_r2[j][i] =\
+            pq.run_query(conn, query_gin_only_r2)
+        n_results_pgsphere_gin_r2[j][i], time_pgsphere_gin_r2[j][i] =\
+            pq.run_query(conn, query_pgsphere_gin_r2)
 
         n_results_pgsphere_only_r3[j][i], time_pgsphere_only_r3[j][i] =\
             pq.run_query(conn, query_pgsphere_only_r3)
-        n_results_btree_only_r3[j][i], time_btree_only_r3[j][i] =\
-            pq.run_query(conn, query_btree_only_r3)
-        n_results_pgsphere_btree_r3[j][i], time_pgsphere_btree_r3[j][i] =\
-            pq.run_query(conn, query_pgsphere_btree_r3)
+        n_results_gin_only_r3[j][i], time_gin_only_r3[j][i] =\
+            pq.run_query(conn, query_gin_only_r3)
+        n_results_pgsphere_gin_r3[j][i], time_pgsphere_gin_r3[j][i] =\
+            pq.run_query(conn, query_pgsphere_gin_r3)
 
         # Print results
         print "(pgSphere GC) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
             str(time_pgsphere_only_gc[j][i]) + ' No. of matches = ' +\
             str(n_results_pgsphere_only_gc[j][i])
-        print "(B-Tree GC) Time elapsed for search radius " +\
+        print "(GIN GC) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_btree_only_gc[j][i]) + ' No. of matches = ' +\
-            str(n_results_btree_only_gc[j][i])
-        print "(pgSphere + B-Tree GC) Time elapsed for search radius " +\
+            str(time_gin_only_gc[j][i]) + ' No. of matches = ' +\
+            str(n_results_gin_only_gc[j][i])
+        print "(pgSphere + GIN GC) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_pgsphere_btree_gc[j][i]) + ' No. of matches = ' +\
-            str(n_results_pgsphere_btree_gc[j][i])
+            str(time_pgsphere_gin_gc[j][i]) + ' No. of matches = ' +\
+            str(n_results_pgsphere_gin_gc[j][i])
 
         print "(pgSphere GNP) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
             str(time_pgsphere_only_gnp[j][i]) + ' No. of matches = ' +\
             str(n_results_pgsphere_only_gnp[j][i])
-        print "(B-Tree GNP) Time elapsed for search radius " +\
+        print "(GIN GNP) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_btree_only_gnp[j][i]) + ' No. of matches = ' +\
-            str(n_results_btree_only_gnp[j][i])
-        print "(pgSphere + B-Tree GNP) Time elapsed for search radius " +\
+            str(time_gin_only_gnp[j][i]) + ' No. of matches = ' +\
+            str(n_results_gin_only_gnp[j][i])
+        print "(pgSphere + GIN GNP) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_pgsphere_btree_gnp[j][i]) + ' No. of matches = ' +\
-            str(n_results_pgsphere_btree_gnp[j][i])
+            str(time_pgsphere_gin_gnp[j][i]) + ' No. of matches = ' +\
+            str(n_results_pgsphere_gin_gnp[j][i])
 
         print "(pgSphere R1) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
             str(time_pgsphere_only_r1[j][i]) + ' No. of matches = ' +\
             str(n_results_pgsphere_only_r1[j][i])
-        print "(B-Tree R1) Time elapsed for search radius " +\
+        print "(GIN R1) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_btree_only_r1[j][i]) + ' No. of matches = ' +\
-            str(n_results_btree_only_r1[j][i])
-        print "(pgSphere + B-Tree R1) Time elapsed for search radius " +\
+            str(time_gin_only_r1[j][i]) + ' No. of matches = ' +\
+            str(n_results_gin_only_r1[j][i])
+        print "(pgSphere + GIN R1) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_pgsphere_btree_r1[j][i]) + ' No. of matches = ' +\
-            str(n_results_pgsphere_btree_r1[j][i])
+            str(time_pgsphere_gin_r1[j][i]) + ' No. of matches = ' +\
+            str(n_results_pgsphere_gin_r1[j][i])
 
         print "(pgSphere R2) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
             str(time_pgsphere_only_r2[j][i]) + ' No. of matches = ' +\
             str(n_results_pgsphere_only_r2[j][i])
-        print "(B-Tree R2) Time elapsed for search radius " +\
+        print "(GIN R2) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_btree_only_r2[j][i]) + ' No. of matches = ' +\
-            str(n_results_btree_only_r2[j][i])
-        print "(pgSphere + B-Tree R2) Time elapsed for search radius " +\
+            str(time_gin_only_r2[j][i]) + ' No. of matches = ' +\
+            str(n_results_gin_only_r2[j][i])
+        print "(pgSphere + GIN R2) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_pgsphere_btree_r2[j][i]) + ' No. of matches = ' +\
-            str(n_results_pgsphere_btree_r2[j][i])
+            str(time_pgsphere_gin_r2[j][i]) + ' No. of matches = ' +\
+            str(n_results_pgsphere_gin_r2[j][i])
 
         print "(pgSphere R3) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
             str(time_pgsphere_only_r3[j][i]) + ' No. of matches = ' +\
             str(n_results_pgsphere_only_r3[j][i])
-        print "(B-Tree R3) Time elapsed for search radius " +\
+        print "(GIN R3) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_btree_only_r3[j][i]) + ' No. of matches = ' +\
-            str(n_results_btree_only_r3[j][i])
-        print "(pgSphere + B-Tree R3) Time elapsed for search radius " +\
+            str(time_gin_only_r3[j][i]) + ' No. of matches = ' +\
+            str(n_results_gin_only_r3[j][i])
+        print "(pgSphere + GIN R3) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_pgsphere_btree_r3[j][i]) + ' No. of matches = ' +\
-            str(n_results_pgsphere_btree_r3[j][i])
+            str(time_pgsphere_gin_r3[j][i]) + ' No. of matches = ' +\
+            str(n_results_pgsphere_gin_r3[j][i])
 
         # Terminate connection to the database
         conn.close()
@@ -415,10 +415,10 @@ ax1.plot(radii_pgsphere * 3600.,
          color='C0',
          label='GC')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_btree_only_gc, axis=0),
+         np.median(time_gin_only_gc, axis=0),
          color='C1')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_pgsphere_btree_gc, axis=0),
+         np.median(time_pgsphere_gin_gc, axis=0),
          color='C2')
 ax1.plot(radii_direct,
          np.median(time_direct_gc, axis=0),
@@ -431,11 +431,11 @@ ax1.plot(radii_pgsphere * 3600.,
          ls=':',
          label='GNP')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_btree_only_gnp, axis=0),
+         np.median(time_gin_only_gnp, axis=0),
          color='C1',
          ls=':')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_pgsphere_btree_gnp, axis=0),
+         np.median(time_pgsphere_gin_gnp, axis=0),
          color='C2',
          ls=':')
 ax1.plot(radii_direct,
@@ -450,11 +450,11 @@ ax1.plot(radii_pgsphere * 3600.,
          ls='-.',
          label='R1')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_btree_only_r1, axis=0),
+         np.median(time_gin_only_r1, axis=0),
          color='C1',
          ls='-.')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_pgsphere_btree_r1, axis=0),
+         np.median(time_pgsphere_gin_r1, axis=0),
          color='C2',
          ls='-.')
 ax1.plot(radii_direct,
@@ -469,11 +469,11 @@ ax1.plot(radii_pgsphere * 3600.,
          ls='--',
          label='R2')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_btree_only_r2, axis=0),
+         np.median(time_gin_only_r2, axis=0),
          color='C1',
          ls='--')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_pgsphere_btree_r2, axis=0),
+         np.median(time_pgsphere_gin_r2, axis=0),
          color='C2',
          ls='--')
 ax1.plot(radii_direct,
@@ -489,12 +489,12 @@ ax1.plot(radii_pgsphere * 3600.,
          lw=3,
          label='R3')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_btree_only_r3, axis=0),
+         np.median(time_gin_only_r3, axis=0),
          color='C1',
          ls='-',
          lw=3)
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_pgsphere_btree_r3, axis=0),
+         np.median(time_pgsphere_gin_r3, axis=0),
          color='C2',
          ls='-',
          lw=3)
@@ -527,8 +527,8 @@ ax1.set_ylabel('Time taken / seconds')
 ax2.set_ylabel('Number of results')
 ax1.legend(loc='upper left')
 ax2.legend(loc='lower right')
-ax1.set_title('PostgreSQL search with pgSphere and INSTRUME B-Tree')
-plt.savefig(output_path + "psql_Newton_ltarchive_pgSphere_BTree_instrume.png")
+ax1.set_title('PostgreSQL search with pgSphere and INSTRUME GIN')
+plt.savefig(output_path + "psql_Newton_ltarchive_pgSphere_GIN_instrume.png")
 
 
 
@@ -540,16 +540,16 @@ plt.savefig(output_path + "psql_Newton_ltarchive_pgSphere_BTree_instrume.png")
 # Create zero arrays for the number of results and execution times
 time_pgsphere_only_gc_groupid = np.zeros((n_repeat, n_interval))
 n_results_pgsphere_only_gc_groupid = np.zeros((n_repeat, n_interval))
-time_btree_only_gc_groupid = np.zeros((n_repeat, n_interval))
-n_results_btree_only_gc_groupid = np.zeros((n_repeat, n_interval))
-time_pgsphere_btree_gc_groupid = np.zeros((n_repeat, n_interval))
-n_results_pgsphere_btree_gc_groupid = np.zeros((n_repeat, n_interval))
+time_gin_only_gc_groupid = np.zeros((n_repeat, n_interval))
+n_results_gin_only_gc_groupid = np.zeros((n_repeat, n_interval))
+time_pgsphere_gin_gc_groupid = np.zeros((n_repeat, n_interval))
+n_results_pgsphere_gin_gc_groupid = np.zeros((n_repeat, n_interval))
 time_pgsphere_only_gnp_groupid = np.zeros((n_repeat, n_interval))
 n_results_pgsphere_only_gnp_groupid = np.zeros((n_repeat, n_interval))
-time_btree_only_gnp_groupid = np.zeros((n_repeat, n_interval))
-n_results_btree_only_gnp_groupid = np.zeros((n_repeat, n_interval))
-time_pgsphere_btree_gnp_groupid = np.zeros((n_repeat, n_interval))
-n_results_pgsphere_btree_gnp_groupid = np.zeros((n_repeat, n_interval))
+time_gin_only_gnp_groupid = np.zeros((n_repeat, n_interval))
+n_results_gin_only_gnp_groupid = np.zeros((n_repeat, n_interval))
+time_pgsphere_gin_gnp_groupid = np.zeros((n_repeat, n_interval))
+n_results_pgsphere_gin_gnp_groupid = np.zeros((n_repeat, n_interval))
 
 # Repeating the queries n_repeat times
 for j in range(n_repeat):
@@ -563,13 +563,13 @@ for j in range(n_repeat):
             "scircle(spoint(radians(" + str(ra_gc) + "), RADIANS(" +\
             str(dec_gc) + ")), RADIANS(" + str(radius) +\
             "))~coords AND \"GROUPID\"=\'WD1145+017\';"
-        query_btree_only_gc_groupid =\
+        query_gin_only_gc_groupid =\
             "EXPLAIN ANALYSE SELECT * FROM allkeys_testing WHERE " +\
             "vincenty(" + str(dec_gc) + ", " + str(ra_gc) +\
             ", dec_degree, ra_degree) <= " + str(radius) +\
             " AND \"GROUPID\"=\'WD1145+017\';"
-        query_pgsphere_btree_gc_groupid =\
-            "EXPLAIN ANALYSE SELECT * FROM allkeys_pgsphere_testing " +\
+        query_pgsphere_gin_gc_groupid =\
+            "EXPLAIN ANALYSE SELECT * FROM allkeys_testing_gin " +\
             "WHERE scircle(spoint(radians(" + str(ra_gc) +\
             "), RADIANS(" + str(dec_gc) + ")), RADIANS(" +\
             str(radius) + "))~coords AND \"GROUPID\"=\'WD1145+017\';"
@@ -578,13 +578,13 @@ for j in range(n_repeat):
             "scircle(spoint(RADIANS(" + str(ra_gnp) + "), RADIANS(" +\
             str(dec_gnp) + ")), RADIANS(" + str(radius) +\
             "))~coords AND \"GROUPID\"=\'WD1145+017\';"
-        query_btree_only_gnp_groupid =\
+        query_gin_only_gnp_groupid =\
             "EXPLAIN ANALYSE SELECT * FROM allkeys_testing WHERE " +\
             "vincenty(" + str(dec_gnp) + ", " + str(ra_gnp) +\
             ", dec_degree, ra_degree) <= " + str(radius) +\
             " AND \"GROUPID\"=\'WD1145+017\';"
-        query_pgsphere_btree_gnp_groupid =\
-            "EXPLAIN ANALYSE SELECT * FROM allkeys_pgsphere_testing " +\
+        query_pgsphere_gin_gnp_groupid =\
+            "EXPLAIN ANALYSE SELECT * FROM allkeys_testing_gin " +\
             "WHERE scircle(spoint(radians(" + str(ra_gnp) +\
             "), RADIANS(" + str(dec_gnp) + ")), RADIANS(" +\
             str(radius) +\
@@ -601,48 +601,48 @@ for j in range(n_repeat):
         n_results_pgsphere_only_gc_groupid[j][i],\
             time_pgsphere_only_gc_groupid[j][i] =\
             pq.run_query(conn, query_pgsphere_only_gc_groupid)
-        n_results_btree_only_gc_groupid[j][i],\
-            time_btree_only_gc_groupid[j][i] =\
-            pq.run_query(conn, query_btree_only_gc_groupid)
-        n_results_pgsphere_btree_gc_groupid[j][i],\
-            time_pgsphere_btree_gc_groupid[j][i] =\
-            pq.run_query(conn, query_pgsphere_btree_gc_groupid)
+        n_results_gin_only_gc_groupid[j][i],\
+            time_gin_only_gc_groupid[j][i] =\
+            pq.run_query(conn, query_gin_only_gc_groupid)
+        n_results_pgsphere_gin_gc_groupid[j][i],\
+            time_pgsphere_gin_gc_groupid[j][i] =\
+            pq.run_query(conn, query_pgsphere_gin_gc_groupid)
         n_results_pgsphere_only_gnp_groupid[j][i], time_pgsphere_only_gnp_groupid[j][i] =\
             pq.run_query(conn, query_pgsphere_only_gnp_groupid)
-        n_results_btree_only_gnp_groupid[j][i],\
-            time_btree_only_gnp_groupid[j][i] =\
-            pq.run_query(conn, query_btree_only_gnp_groupid)
-        n_results_pgsphere_btree_gnp_groupid[j][i],\
-            time_pgsphere_btree_gnp_groupid[j][i] =\
-            pq.run_query(conn, query_pgsphere_btree_gnp_groupid)
+        n_results_gin_only_gnp_groupid[j][i],\
+            time_gin_only_gnp_groupid[j][i] =\
+            pq.run_query(conn, query_gin_only_gnp_groupid)
+        n_results_pgsphere_gin_gnp_groupid[j][i],\
+            time_pgsphere_gin_gnp_groupid[j][i] =\
+            pq.run_query(conn, query_pgsphere_gin_gnp_groupid)
         # Print results
         print "(pgSphere GC) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
             str(time_pgsphere_only_gc_groupid[j][i]) + ' No. of matches = ' +\
             str(n_results_pgsphere_only_gc_groupid[j][i])
-        print "(B-Tree GC) Time elapsed for search radius " +\
+        print "(GIN GC) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_btree_only_gc_groupid[j][i]) + ' No. of matches = ' +\
-            str(n_results_btree_only_gc_groupid[j][i])
-        print "(pgSphere + B-Tree GC) Time elapsed for search radius " +\
+            str(time_gin_only_gc_groupid[j][i]) + ' No. of matches = ' +\
+            str(n_results_gin_only_gc_groupid[j][i])
+        print "(pgSphere + GIN GC) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_pgsphere_btree_gc_groupid[j][i]) +\
+            str(time_pgsphere_gin_gc_groupid[j][i]) +\
             ' No. of matches = ' +\
-            str(n_results_pgsphere_btree_gc_groupid[j][i])
+            str(n_results_pgsphere_gin_gc_groupid[j][i])
         print "(pgSphere GNP) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
             str(time_pgsphere_only_gnp_groupid[j][i]) +\
             ' No. of matches = ' +\
             str(n_results_pgsphere_only_gnp_groupid[j][i])
-        print "(B-Tree GNP) Time elapsed for search radius " +\
+        print "(GIN GNP) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_btree_only_gnp_groupid[j][i]) + ' No. of matches = ' +\
-            str(n_results_btree_only_gnp_groupid[j][i])
-        print "(pgSphere + B-Tree GNP) Time elapsed for search radius " +\
+            str(time_gin_only_gnp_groupid[j][i]) + ' No. of matches = ' +\
+            str(n_results_gin_only_gnp_groupid[j][i])
+        print "(pgSphere + GIN GNP) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_pgsphere_btree_gnp_groupid[j][i]) +\
+            str(time_pgsphere_gin_gnp_groupid[j][i]) +\
             ' No. of matches = ' +\
-            str(n_results_pgsphere_btree_gnp_groupid[j][i])
+            str(n_results_pgsphere_gin_gnp_groupid[j][i])
         # Terminate connection to the database
         conn.close()
 
@@ -706,13 +706,13 @@ ax1.plot(radii_pgsphere * 3600.,
          color='C0',
          label='(GC) pgSphere')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_btree_only_gc_groupid, axis=0),
+         np.median(time_gin_only_gc_groupid, axis=0),
          color='C1',
-         label='(GC) B-Tree')
+         label='(GC) GIN')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_pgsphere_btree_gc_groupid, axis=0),
+         np.median(time_pgsphere_gin_gc_groupid, axis=0),
          color='C2',
-         label='(GC) pgSphere + B-Tree')
+         label='(GC) pgSphere + GIN')
 ax1.plot(radii_direct,
          np.median(time_direct_gc_groupid, axis=0),
          color='C3',
@@ -724,15 +724,15 @@ ax1.plot(radii_pgsphere * 3600.,
          ls=':',
          label='(GNP) pgSphere')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_btree_only_gnp_groupid, axis=0),
+         np.median(time_gin_only_gnp_groupid, axis=0),
          color='C1',
          ls=':',
-         label='(GNP) B-Tree')
+         label='(GNP) GIN')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_pgsphere_btree_gnp_groupid, axis=0),
+         np.median(time_pgsphere_gin_gnp_groupid, axis=0),
          color='C2',
          ls=':',
-         label='(GNP) pgSphere + B-Tree')
+         label='(GNP) pgSphere + GIN')
 ax1.plot(radii_direct,
          np.median(time_direct_gnp_groupid, axis=0),
          color='C3',
@@ -751,8 +751,8 @@ ax1.set_ylabel('Time taken / seconds')
 ax2.set_ylabel('Number of results')
 ax1.legend(loc='upper left')
 ax2.legend(loc='center right')
-ax1.set_title('PostgreSQL search with pgSphere and GROUPID B-Tree')
-plt.savefig(output_path + "psql_Newton_ltarchive_pgSphere_BTree_groupid.png")
+ax1.set_title('PostgreSQL search with pgSphere and GROUPID GIN')
+plt.savefig(output_path + "psql_Newton_ltarchive_pgSphere_GIN_groupid.png")
 
 
 
@@ -763,16 +763,16 @@ plt.savefig(output_path + "psql_Newton_ltarchive_pgSphere_BTree_groupid.png")
 # Create zero arrays for the number of results and execution times
 time_pgsphere_only_gc_groupid = np.zeros((n_repeat, n_interval))
 n_results_pgsphere_only_gc_groupid = np.zeros((n_repeat, n_interval))
-time_btree_only_gc_groupid = np.zeros((n_repeat, n_interval))
-n_results_btree_only_gc_groupid = np.zeros((n_repeat, n_interval))
-time_pgsphere_btree_gc_groupid = np.zeros((n_repeat, n_interval))
-n_results_pgsphere_btree_gc_groupid = np.zeros((n_repeat, n_interval))
+time_gin_only_gc_groupid = np.zeros((n_repeat, n_interval))
+n_results_gin_only_gc_groupid = np.zeros((n_repeat, n_interval))
+time_pgsphere_gin_gc_groupid = np.zeros((n_repeat, n_interval))
+n_results_pgsphere_gin_gc_groupid = np.zeros((n_repeat, n_interval))
 time_pgsphere_only_gnp_groupid = np.zeros((n_repeat, n_interval))
 n_results_pgsphere_only_gnp_groupid = np.zeros((n_repeat, n_interval))
-time_btree_only_gnp_groupid = np.zeros((n_repeat, n_interval))
-n_results_btree_only_gnp_groupid = np.zeros((n_repeat, n_interval))
-time_pgsphere_btree_gnp_groupid = np.zeros((n_repeat, n_interval))
-n_results_pgsphere_btree_gnp_groupid = np.zeros((n_repeat, n_interval))
+time_gin_only_gnp_groupid = np.zeros((n_repeat, n_interval))
+n_results_gin_only_gnp_groupid = np.zeros((n_repeat, n_interval))
+time_pgsphere_gin_gnp_groupid = np.zeros((n_repeat, n_interval))
+n_results_pgsphere_gin_gnp_groupid = np.zeros((n_repeat, n_interval))
 
 # Repeating the queries n_repeat times
 for j in range(n_repeat):
@@ -786,13 +786,13 @@ for j in range(n_repeat):
             "scircle(spoint(radians(" + str(ra_gc) + "), RADIANS(" +\
             str(dec_gc) + ")), RADIANS(" + str(radius) +\
             "))~coords AND \"GROUPID\"=\'DOES_NOT_EXIST\';"
-        query_btree_only_gc_groupid =\
+        query_gin_only_gc_groupid =\
             "EXPLAIN ANALYSE SELECT * FROM allkeys_testing WHERE " +\
             "vincenty(" + str(dec_gc) + ", " + str(ra_gc) +\
             ", dec_degree, ra_degree) <= " + str(radius) +\
             " AND \"GROUPID\"=\'DOES_NOT_EXIST\';"
-        query_pgsphere_btree_gc_groupid =\
-            "EXPLAIN ANALYSE SELECT * FROM allkeys_pgsphere_testing " +\
+        query_pgsphere_gin_gc_groupid =\
+            "EXPLAIN ANALYSE SELECT * FROM allkeys_testing_gin " +\
             "WHERE scircle(spoint(radians(" + str(ra_gc) +\
             "), RADIANS(" + str(dec_gc) + ")), RADIANS(" +\
             str(radius) + "))~coords AND \"GROUPID\"=\'DOES_NOT_EXIST\';"
@@ -801,13 +801,13 @@ for j in range(n_repeat):
             "scircle(spoint(RADIANS(" + str(ra_gnp) + "), RADIANS(" +\
             str(dec_gnp) + ")), RADIANS(" + str(radius) +\
             "))~coords AND \"GROUPID\"=\'DOES_NOT_EXIST\';"
-        query_btree_only_gnp_groupid =\
+        query_gin_only_gnp_groupid =\
             "EXPLAIN ANALYSE SELECT * FROM allkeys_testing WHERE " +\
             "vincenty(" + str(dec_gnp) + ", " + str(ra_gnp) +\
             ", dec_degree, ra_degree) <= " + str(radius) +\
             " AND \"GROUPID\"=\'DOES_NOT_EXIST\';"
-        query_pgsphere_btree_gnp_groupid =\
-            "EXPLAIN ANALYSE SELECT * FROM allkeys_pgsphere_testing " +\
+        query_pgsphere_gin_gnp_groupid =\
+            "EXPLAIN ANALYSE SELECT * FROM allkeys_testing_gin " +\
             "WHERE scircle(spoint(radians(" + str(ra_gnp) +\
             "), RADIANS(" + str(dec_gnp) + ")), RADIANS(" +\
             str(radius) +\
@@ -824,48 +824,48 @@ for j in range(n_repeat):
         n_results_pgsphere_only_gc_groupid[j][i],\
             time_pgsphere_only_gc_groupid[j][i] =\
             pq.run_query(conn, query_pgsphere_only_gc_groupid)
-        n_results_btree_only_gc_groupid[j][i],\
-            time_btree_only_gc_groupid[j][i] =\
-            pq.run_query(conn, query_btree_only_gc_groupid)
-        n_results_pgsphere_btree_gc_groupid[j][i],\
-            time_pgsphere_btree_gc_groupid[j][i] =\
-            pq.run_query(conn, query_pgsphere_btree_gc_groupid)
+        n_results_gin_only_gc_groupid[j][i],\
+            time_gin_only_gc_groupid[j][i] =\
+            pq.run_query(conn, query_gin_only_gc_groupid)
+        n_results_pgsphere_gin_gc_groupid[j][i],\
+            time_pgsphere_gin_gc_groupid[j][i] =\
+            pq.run_query(conn, query_pgsphere_gin_gc_groupid)
         n_results_pgsphere_only_gnp_groupid[j][i], time_pgsphere_only_gnp_groupid[j][i] =\
             pq.run_query(conn, query_pgsphere_only_gnp_groupid)
-        n_results_btree_only_gnp_groupid[j][i],\
-            time_btree_only_gnp_groupid[j][i] =\
-            pq.run_query(conn, query_btree_only_gnp_groupid)
-        n_results_pgsphere_btree_gnp_groupid[j][i],\
-            time_pgsphere_btree_gnp_groupid[j][i] =\
-            pq.run_query(conn, query_pgsphere_btree_gnp_groupid)
+        n_results_gin_only_gnp_groupid[j][i],\
+            time_gin_only_gnp_groupid[j][i] =\
+            pq.run_query(conn, query_gin_only_gnp_groupid)
+        n_results_pgsphere_gin_gnp_groupid[j][i],\
+            time_pgsphere_gin_gnp_groupid[j][i] =\
+            pq.run_query(conn, query_pgsphere_gin_gnp_groupid)
         # Print results
         print "(pgSphere GC) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
             str(time_pgsphere_only_gc_groupid[j][i]) + ' No. of matches = ' +\
             str(n_results_pgsphere_only_gc_groupid[j][i])
-        print "(B-Tree GC) Time elapsed for search radius " +\
+        print "(GIN GC) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_btree_only_gc_groupid[j][i]) + ' No. of matches = ' +\
-            str(n_results_btree_only_gc_groupid[j][i])
-        print "(pgSphere + B-Tree GC) Time elapsed for search radius " +\
+            str(time_gin_only_gc_groupid[j][i]) + ' No. of matches = ' +\
+            str(n_results_gin_only_gc_groupid[j][i])
+        print "(pgSphere + GIN GC) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_pgsphere_btree_gc_groupid[j][i]) +\
+            str(time_pgsphere_gin_gc_groupid[j][i]) +\
             ' No. of matches = ' +\
-            str(n_results_pgsphere_btree_gc_groupid[j][i])
+            str(n_results_pgsphere_gin_gc_groupid[j][i])
         print "(pgSphere GNP) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
             str(time_pgsphere_only_gnp_groupid[j][i]) +\
             ' No. of matches = ' +\
             str(n_results_pgsphere_only_gnp_groupid[j][i])
-        print "(B-Tree GNP) Time elapsed for search radius " +\
+        print "(GIN GNP) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_btree_only_gnp_groupid[j][i]) + ' No. of matches = ' +\
-            str(n_results_btree_only_gnp_groupid[j][i])
-        print "(pgSphere + B-Tree GNP) Time elapsed for search radius " +\
+            str(time_gin_only_gnp_groupid[j][i]) + ' No. of matches = ' +\
+            str(n_results_gin_only_gnp_groupid[j][i])
+        print "(pgSphere + GIN GNP) Time elapsed for search radius " +\
             str(radius * 3600.) + " arcsec : " +\
-            str(time_pgsphere_btree_gnp_groupid[j][i]) +\
+            str(time_pgsphere_gin_gnp_groupid[j][i]) +\
             ' No. of matches = ' +\
-            str(n_results_pgsphere_btree_gnp_groupid[j][i])
+            str(n_results_pgsphere_gin_gnp_groupid[j][i])
         # Terminate connection to the database
         conn.close()
 
@@ -929,13 +929,13 @@ ax1.plot(radii_pgsphere * 3600.,
          color='C0',
          label='(GC) pgSphere')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_btree_only_gc_groupid, axis=0),
+         np.median(time_gin_only_gc_groupid, axis=0),
          color='C1',
-         label='(GC) B-Tree')
+         label='(GC) GIN')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_pgsphere_btree_gc_groupid, axis=0),
+         np.median(time_pgsphere_gin_gc_groupid, axis=0),
          color='C2',
-         label='(GC) pgSphere + B-Tree')
+         label='(GC) pgSphere + GIN')
 ax1.plot(radii_direct,
          np.median(time_direct_gc_groupid, axis=0),
          color='C3',
@@ -947,15 +947,15 @@ ax1.plot(radii_pgsphere * 3600.,
          ls=':',
          label='(GNP) pgSphere')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_btree_only_gnp_groupid, axis=0),
+         np.median(time_gin_only_gnp_groupid, axis=0),
          color='C1',
          ls=':',
-         label='(GNP) B-Tree')
+         label='(GNP) GIN')
 ax1.plot(radii_pgsphere * 3600.,
-         np.median(time_pgsphere_btree_gnp_groupid, axis=0),
+         np.median(time_pgsphere_gin_gnp_groupid, axis=0),
          color='C2',
          ls=':',
-         label='(GNP) pgSphere + B-Tree')
+         label='(GNP) pgSphere + GIN')
 ax1.plot(radii_direct,
          np.median(time_direct_gnp_groupid, axis=0),
          color='C3',
@@ -975,5 +975,5 @@ ax1.set_ylabel('Time taken / seconds')
 ax2.set_ylabel('Number of results')
 ax1.legend(loc='upper left')
 ax2.legend(loc='center right')
-ax1.set_title('PostgreSQL search with pgSphere and B-Tree with no match')
-plt.savefig(output_path + "psql_Newton_ltarchive_pgSphere_BTree_return_none.png")
+ax1.set_title('PostgreSQL search with pgSphere and GIN with no match')
+plt.savefig(output_path + "psql_Newton_ltarchive_pgSphere_GIN_return_none.png")

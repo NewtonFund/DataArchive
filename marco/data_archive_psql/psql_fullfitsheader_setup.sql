@@ -39,7 +39,7 @@ CLUSTER allkeys_pgspheres_coords ON allkeys_pgspheres;
 CREATE TABLE allkeys_pgsphere_testing AS SELECT * FROM allkeys;
 ALTER TABLE allkeys_pgsphere_testing ADD COLUMN coords spoint;
 UPDATE allkeys_pgsphere_testing set coords = spoint(radians(ra_degree),radians(dec_degree));
-CREATE INDEX allkeys_pgspheres_testing_coords ON tgas USING GIST(coords);
+CREATE INDEX allkeys_pgspheres_testing_coords ON allkeys_pgsphere_testing USING GIST(coords);
 CLUSTER allkeys_pgspheres_testing_coords ON allkeys_pgspheres_testing;
 CREATE INDEX allkeys_pgsphere_testing_object_idx ON allkeys_pgsphere_testing USING BTREE("OBJECT");
 CREATE INDEX allkeys_pgsphere_testing_tagid_idx ON allkeys_pgsphere_testing USING BTREE("TAGID");
@@ -67,6 +67,11 @@ CREATE INDEX allkeys_testing_groupid_hash_idx ON allkeys_testing_hash USING HASH
 
 
 CREATE TABLE allkeys_testing_gin AS SELECT * FROM allkeys;
+
+ALTER TABLE allkeys_testing_gin ADD COLUMN coords spoint;
+UPDATE allkeys_testing_gin set coords = spoint(radians(ra_degree),radians(dec_degree));
+CREATE INDEX allkeys_testing_gin_coords ON allkeys_testing_gin USING GIST(coords);
+CLUSTER allkeys_testing_gin_coords ON allkeys_testing_gin;
 
 ALTER TABLE allkeys_testing_gin ADD COLUMN "INSTRUME_tsvector" TSVECTOR;
 UPDATE allkeys_testing_gin SET "INSTRUME_tsvector" = to_tsvector("INSTRUME");

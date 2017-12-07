@@ -404,10 +404,6 @@ ax1.set_xticklabels([r'$10^{0}$',r'$10^{1}$',r'$10^{2}$',r'$10^{3}$',r'$10^{4}$'
 ax2.set_xticklabels([r'$10^{0}$',r'$10^{1}$',r'$10^{2}$',r'$10^{3}$',r'$10^{4}$',r'$10^{5}$'])
 ax3.set_xticklabels([r'$10^{0}$',r'$10^{1}$',r'$10^{2}$',r'$10^{3}$',r'$10^{4}$',r'$10^{5}$',r'$10^{6}$'])
 
-ax1.plot(np.log10(hash_sample), np.log10(itp.splev(hash_sample, hash_itp)))
-ax2.plot(np.log10(btree_sample), np.log10(itp.splev(btree_sample, btree_itp)))
-ax3.plot(np.log10(gin_sample), np.log10(itp.splev(gin_sample, gin_itp)))
-
 plt.savefig(output_path + 'query_time_hash_btree_gin_double_filters_partial_compared.png')
 
 

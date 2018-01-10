@@ -1,0 +1,14 @@
+<div>
+  <p>Please enter the values of:</p>
+  <p>1.) Right Ascension (decimal degree) <input type="float" ng-init="inputValue.val1=17.76112222" ng-model="inputValue.val1"/></p>
+  <p>2.) Declination (decimal degree) <input type="float" ng-init="inputValue.val2=29.00780556" ng-model="inputValue.val2"/></p>
+  <p>3.) Exposure Time (s) <input type="float" ng-init="inputValue.val3=10800.0" ng-model="inputValue.val3"/></p>
+  <p>4.) Starting Time (MJD) <input type="float" ng-init="inputValue.val4=57755.8" ng-model="inputValue.val4"/></p>
+  <p></p>
+  <input type="button" value="Say Hello" ng-click="$ctrl.loadHelloWorld()"/>
+  <input type="button" value="Display" ng-init="$ctrl.drawRotatorMap(inputValue)" ng-click="$ctrl.drawRotatorMap(inputValue)"/>
+  <div class="rotatormap">
+    <svg><g></g></svg>
+  </div>
+</div>
+

@@ -1,0 +1,47 @@
+{
+    "description": {
+        "paragraphs": [
+            "IO:O is the optical imaging component of the IO (Infrared-Optical) suite of instruments, and is a replacement for RATCam that has been the workhorse optical camera for many years. It provides a wider field of view and greater sensitivity than RATCam, and when combined with IO:I may eventually allow the ability to almost simultaneously image in both optical and near-infrared bands."
+        ]
+    },
+    "specification": {
+        "detector": "4096x4112 pixel e2v CCD 231, deep depletion, Astro ER1 coated", 
+        "pixelSize": "15.0 x 15.0 microns",
+        "pixelScale": "approx. 0.15 arcsec/pixel (unbinned)",
+        "fieldOfView": "10 x 10 arcmin",
+        "gain": "1.6 electron / ADU"
+    }, 
+    "filters": {
+        "broadband": [
+            "Sloan u',", 
+            "Sloan g',", 
+            "Sloan r',", 
+            "Sloan i',", 
+            "Sloan z',",
+            "Bessell B,",
+            "Bessell V"
+        ],
+        "narrowband": [
+        "H-alpha (663.4 nm),",
+        "H-alpha (670.5 nm),",
+        "H-alpha (675.5 nm),",
+        "H-alpha (682.2 nm)"
+        ],
+        "grey": [
+        "ND 1.5,",
+        "ND 3"
+        ]
+    }, 
+    "integrationTime": {
+        "minimumExposureTime": "10 sec"
+    }, 
+    "id": "ioo", 
+    "images": [
+        "img/instruments/ioo.png", 
+        "img/instruments/ioo2.jpg", 
+        "img/instruments/ioo-filters1.png",
+        "img/instruments/ioo-filters2.png",
+        "img/instruments/ioo-filters3.png"
+    ], 
+    "name": "IO:O"
+}

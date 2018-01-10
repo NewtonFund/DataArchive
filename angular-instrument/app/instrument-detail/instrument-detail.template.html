@@ -1,0 +1,50 @@
+<div class="instrument-images">
+  <img ng-src="{{img}}" class="instrument"
+      ng-class="{selected: img === $ctrl.mainImageUrl}"
+      ng-repeat="img in $ctrl.instrument.images" />
+</div>
+
+<h1>{{$ctrl.instrument.name}}</h1>
+
+<p ng-repeat="paragraph in $ctrl.instrument.description.paragraphs">{{paragraph}}</p>
+
+<ul class="instrument-thumbs">
+  <li ng-repeat="img in $ctrl.instrument.images">
+    <img ng-src="{{img}}" ng-click="$ctrl.setImage(img)" />
+  </li>
+</ul>
+
+<ul class="specs">
+  <li>
+    <span>Specification</span>
+    <dl>
+      <dd>{{$ctrl.instrument.specification.detector}}</dd>
+      <dt>Pixel Size</dt>
+      <dd>{{$ctrl.instrument.specification.pixelSize}}</dd>
+      <dt>Pixel Scale</dt>
+      <dd>{{$ctrl.instrument.specification.pixelScale}}</dd>
+      <dt>Field of View</dt>
+      <dd>{{$ctrl.instrument.specification.fieldOfView}}</dd>
+      <dt>Gain</dt>
+      <dd>{{$ctrl.instrument.specification.gain}}</dd>
+    </dl>
+  </li>
+  <li>
+    <span>Filters</span>
+    <dl>
+      <dt>Broadband Filters</dt>
+      <dd ng-repeat="filter in $ctrl.instrument.filters.broadband">{{filter}}</dd>
+      <dt>Narrowband Filters</dt>
+      <dd ng-repeat="filter in $ctrl.instrument.filters.narrowband">{{filter}}</dd>
+      <dt>Neutral Density Filters</dt>
+      <dd ng-repeat="filter in $ctrl.instrument.filters.grey">{{filter}}</dd>
+    </dl>
+  </li>
+  <li>
+    <span>Integration Time</span>
+    <dl>
+      <dt>Minimum Exposure Time</dt>
+      <dd>{{$ctrl.instrument.integrationTime.minimumExposureTime}}</dd>
+    </dl>
+  </li>
+</ul>

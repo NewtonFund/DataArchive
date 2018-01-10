@@ -1,0 +1,48 @@
+<div class="container-fluid">
+  <div class="row">
+    <div class="col-md-3">
+      <!--Sidebar content-->
+
+      <p>
+        Search:
+        <input ng-model="$ctrl.query" />
+      </p>
+
+      <p>
+        Sort by:
+        <select ng-model="$ctrl.orderProp">
+          <option value="name">Alphabetical</option>
+          <option value="age">Newest</option>
+        </select>
+      </p>
+
+      <p>
+        <a href="#!/exposure-calculator">Exposure Time Calculator</a>
+      </p>
+
+      <p>
+        <a href="#!/heatmap-generator">Heatmap Generator</a>
+      </p>
+
+      <p>
+        <a href="#!/phase2-rotator">Rotator Tools</p>
+      </p>
+
+    </div>
+    <div class="col-md-8">
+      <!--Body content-->
+
+      <ul class="instruments">
+        <li ng-repeat="instrument in $ctrl.instruments | filter:$ctrl.query | orderBy:$ctrl.orderProp"
+            class="thumbnail instrument-list-item">
+          <a href="#!/instruments/{{instrument.id}}" class="thumb">
+            <img ng-src="{{instrument.imageUrl}}" alt="{{instrument.name}}" />
+          </a>
+          <a href="#!/instruments/{{instrument.id}}">{{instrument.name}}</a>
+          <p>{{instrument.snippet}}</p>
+        </li>
+      </ul>
+
+    </div>
+  </div>
+</div>

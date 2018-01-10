@@ -1,0 +1,16 @@
+[
+    {
+        "id": "ioo", 
+        "imageUrl": "img/instruments/ioo.png", 
+        "name": "IO:O", 
+        "snippet": "IO:O is the optical imaging component of the IO (Infrared-Optical) suite of instruments, and is a replacement for RATCam that has been the workhorse optical camera for many years. It provides a wider field of view and greater sensitivity than RATCam, and when combined with IO:I may eventually allow the ability to almost simultaneously image in both optical and near-infrared bands.",
+        "runningSince": "20120601"
+    }, 
+    {
+        "id": "ioi", 
+        "imageUrl": "img/instruments/ioi.jpg", 
+        "name": "IO:I", 
+        "snippet": "IO:I is the near-infrared imaging component of the IO suite of instruments. It uses a 2048x2048 pixel Hawaii 2RG 1.7μm cutoff detector with a field of view of 6.3 arcminutes, a pixel scale of 0.18 arcsec, and currently a single H-band (1.5-1.8 micron) filter. It became available as a common-user instrument in August 2015.",
+        "runningSince": "20150801"
+    }
+]

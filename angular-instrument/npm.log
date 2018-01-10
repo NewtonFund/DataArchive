@@ -1,0 +1,24 @@
+
+> angular-phonecat@0.0.0 prestart /home/marco/angular-phonecat
+> npm install
+
+
+> angular-phonecat@0.0.0 postinstall /home/marco/angular-phonecat
+> bower install
+
+
+> angular-phonecat@0.0.0 start /home/marco/angular-phonecat
+> http-server ./app -a 0.0.0.0 -p 8000 -c-1
+
+[33mStarting up http-server, serving [39m[36m./app[39m[33m
+Available on:[39m
+[32m  http://127.0.0.1:8000[39m
+[32m  http://10.0.2.15:8000[39m
+[32m  http://192.168.56.101:8000[39m
+[32m  http://172.18.0.1:8000[39m
+Hit CTRL-C to stop the server
+[Wed Dec 13 2017 10:27:18 GMT+0000 (GMT)] "[36mGET[39m [36m/[39m" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:56.0) Gecko/20100101 Firefox/56.0"
+[Wed Dec 13 2017 10:27:18 GMT+0000 (GMT)] "[36mGET[39m [36m/bower_components/bootstrap/dist/css/bootstrap.css[39m" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:56.0) Gecko/20100101 Firefox/56.0"
+[Wed Dec 13 2017 10:27:18 GMT+0000 (GMT)] "[36mGET[39m [36m/bower_components/angular/angular.js[39m" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:56.0) Gecko/20100101 Firefox/56.0"
+[Wed Dec 13 2017 10:27:18 GMT+0000 (GMT)] "[36mGET[39m [36m/app.js[39m" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:56.0) Gecko/20100101 Firefox/56.0"
+[31mhttp-server stopped.[39m

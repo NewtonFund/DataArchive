@@ -1,0 +1,39 @@
+{
+    "description" : {
+        "paragraphs" : [
+	    "IO:I is the near-infrared imaging component of the IO suite of instruments. It uses a 2048x2048 pixel Hawaii 2RG 1.7μm cutoff detector with a field of view of 6.3 arcminutes, a pixel scale of 0.18 arcsec, and currently a single H-band (1.5-1.8 micron) filter. It became available as a common-user instrument in August 2015.",
+	    "The instrument design is described in greater detail in R.M. Barnsley, H.E. Jermak, I.A. Steele, R.J. Smith, S.D. Bates, C.J. Mottram, \"IO:I, a near-infrared camera for the Liverpool Telescope\", J. Astron. Telesc. Instrum. Syst. 2(1), 015002 (Mar 04, 2016). (http://dx.doi.org/10.1117/1.JATIS.2.1.015002)."
+        ]
+    },
+    "specification": {
+        "detector": "Teledyne 2048 x 2048 Hawaii-2RG 1.7μm cutoff HgCdTe Array", 
+        "pixelSize": "18.0 x 18.0 microns",
+        "pixelScale": "0.184 arcsec/pixel (unbinned)",
+        "fieldOfView": "6.27 x 6.27 arcmin",
+        "gain": "18dB"
+    }, 
+    "filters": {
+        "broadband": [
+            "J,", 
+            "H,",
+            "J+H split"
+        ],
+        "narrowband": [
+            "Nil"
+        ],
+        "grey": [
+            "Nil"
+        ]
+    },
+    "integrationTime": {
+        "maximumExposurePerFrame": "6 sec", 
+        "maximumExposureTime": "6 sec"
+    }, 
+    "id": "ioi", 
+    "images": [
+        "img/instruments/ioi.jpg", 
+        "img/instruments/ioi2.png", 
+        "img/instruments/ioi3.gif"
+    ], 
+    "name": "IO:I"
+}

@@ -1,0 +1,60 @@
+<div>
+  <!-- THIS IS NOT AN ANGULARJS WAY TO SET UP A DROP DOWN MENU -->
+  <p>
+    Instrument:
+    <select ng-model="$ctrl.selectedinstrument" ng-init="ioo">
+      <option value="ioo">IO:O</option>
+      <option value="ioi">IO:I</option>
+      <option value="rise">RISE</option>
+      <option value="ringo">RINGO3</option>
+    </select>
+  </p>
+  <p>
+    Binning:
+    <select ng-model="$ctrl.selectedbinning" ng-init="two">
+      <option value="one">1x1</option>
+      <option value="two">2x2</option>
+    </select>
+  </p>
+  <p>
+    Filter:
+    <select ng-model="$ctrl.selectedfilter" ng-init="fbb">
+      <!-- IO:O Bessell -->
+      <option value="fbb">IO:O - Bessell B</option>
+      <option value="fbv">IO:O - Bessell V</option>
+      <!-- IO:O SDSS -->
+      <option value="fsu">IO:O - SDSS U</option>
+      <option value="fsg">IO:O - SDSS G</option>
+      <option value="fsr">IO:O - SDSS R</option>
+      <option value="fsi">IO:O - SDSS I</option>
+      <option value="fsz">IO:O - SDSS Z</option>
+      <!-- IO:I -->
+      <option value="fjj">IO:I - J</option>
+      <option value="fhh">IO:I - H</option>
+      <!-- RISE -->
+      <option value="frise">RISE - V+R</option>
+      <option value="frise720">RISE - 720</option>
+      <!-- RINGO3 -->
+      <option value="fringr">RINGO - red (d)</option>
+      <option value="fringg">RINGO - green (f)</option>
+      <option value="fringb">RINGO - blue (e)</option>
+    </select>
+  </p>
+
+  <p>Please enter the seeing, magnitude, S/N ratio:</p>
+  <input type="number" ng-init="inputValue.val1=18.0" ng-model="inputValue.val1"/>
+  <input type="number" ng-init="inputValue.val2=20.0" ng-model="inputValue.val2"/>
+<!--  <input type="button" value="Sum" ng-click="$ctrl.calculateSum(inputValue)" />
+    <p></p>
+  <p>The answer is = {{$ctrl.total}}</p>
+  <p></p>
+  <p>{{$ctrl}}</p>
+  <svg>{{$ctrl.drawCircles()}}</svg>-->
+  <input type="button" value="Calculate" ng-init="$ctrl.calculateImaging(inputValue, $ctrl.selectedinstrument, $ctrl.selectedbinning, $ctrl.selectedfilter)" ng-click="$ctrl.calculateImaging(inputValue, $ctrl.selectedinstrument, $ctrl.selectedbinning, $ctrl.selectedfilter)" />
+  <p></p>
+  <div class="exposureTime">
+    <table>
+    </table>
+  </div>
+</div>
+

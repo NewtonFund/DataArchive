@@ -1,0 +1,18 @@
+<div>
+  <p>$$ f(x,y) = \mathrm{sin}(x)^m + \mathrm{cos}(y)^n $$</p>
+  <p>Please enter the values of m and n:</p>
+  </p>
+  <input type="number" ng-init="inputValue.val1=1" ng-model="inputValue.val1"/>
+  <input type="number" ng-init="inputValue.val2=-1" ng-model="inputValue.val2"/>
+<!--  <input type="button" value="Sum" ng-click="$ctrl.calculateSum(inputValue)" />
+    <p></p>
+  <p>The answer is = {{$ctrl.total}}</p>
+  <p></p>
+  <p>{{$ctrl}}</p>
+  <svg>{{$ctrl.drawCircles()}}</svg>-->
+  <input type="button" value="Plot" ng-init="$ctrl.drawHeatmap(inputValue, 'heatmap1', 90, 45)" ng-click="$ctrl.drawHeatmap(inputValue, 'heatmap1', 90, 45)" />
+  <div class="heatmap1">
+    <svg><g></g></svg>
+  </div>
+</div>
+

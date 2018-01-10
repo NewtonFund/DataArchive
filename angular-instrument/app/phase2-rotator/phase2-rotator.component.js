@@ -12,12 +12,22 @@ component('phase2Rotator', {
 
             self.loadHelloWorld = function () {
 
-                $http.get("server-side/generate_hello_world.py").success(function (data) {
-                    console.log(data);
-                    fs.createWriteStream().write(data);
-                }).error(function() {
+                $http.get("server-side/generate_hello_world.py")
+                //.success( function (data) {
+                //    alert(data);
+                //    console.log(data);
+                //})
+                .error(function() {
                     alert("Python script not found.");
                 })
+
+//                $http.get("server-side/generate_hello_world.py").success(function (data) {
+//                    alert(data);
+                    //console.log(data);
+                    //fs.createWriteStream().write(data);
+//                }).error(function() {
+//                    alert("Python script not found.");
+//                })
             }
 
         }

@@ -14,15 +14,13 @@
     "karma-firefox-launcher": "^0.1.7",
     "karma-jasmine": "^0.3.8",
     "protractor": "^4.0.9",
-    "node-http-server": "latest",
-    "dynamicjs": "latest"
+    "router": "latest"
   },
   "scripts": {
     "postinstall": "bower install",
 
     "prestart": "npm install",
-    "start-dynamic": "http-server ./app -a 0.0.0.0 -p 8000 -c-1",
-    "start": "dynamicjs --js ./app 8000",
+    "start": "http-server ./app -a 0.0.0.0 -p 8000 -c-1",
 
     "pretest": "npm install",
     "test": "karma start karma.conf.js",

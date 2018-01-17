@@ -154,8 +154,8 @@ component('heatmapGenerator', {
 
                 function populateData(xres, yres) {
                     data = [];
-                    xScaleFactor = Math.PI / 180. * (360./xres);
-                    yScaleFactor = Math.PI / 180. * (180./yres);
+                    var xScaleFactor = Math.PI / 180. * (360./xres);
+                    var yScaleFactor = Math.PI / 180. * (180./yres);
                     for (var i = 0; i < xres; ++i) {
                         for (var j = 0; j < yres; ++j) {
                             var newItem = {};

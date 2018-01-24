@@ -27,3 +27,27 @@ CREATE FUNCTION vincenty (lat1 DOUBLE, long1 DOUBLE, lat2 DOUBLE, long2 DOUBLE) 
     )
   );
 
+
+drop procedure selectRange;
+
+delimiter //
+
+CREATE PROCEDURE selectRange (IN lower FLOAT, IN upper FLOAT)
+  BEGIN
+    SELECT * FROM objdat WHERE RA > lower AND RA < upper;
+  END//
+
+delimiter ;
+
+Call selectRange(114.1, 114.15);
+
+
+
+
+
+ALTER TABLE obsdat drop column Xpix, drop column Ypix, drop column SEflags, drop column FWHM, drop column Elongation, drop column Ellipticity, drop column Instmag, drop column Instmagerr;
+
+ALTER TABLE obsdat DROP INDEX obs_ra_dec, DROP INDEX usnoref_index;
+
+CREATE TABLE obsdat100split ENGINE=MYISAM PARTITION BY KEY(usnoref) PARTITIONS 100 AS SELECT * FROM obsdat WHERE usnoref IN (SELECT usnoref FROM objdat WHERE entries>9);
+

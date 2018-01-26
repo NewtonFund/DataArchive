@@ -56,7 +56,8 @@ conn = mysql.connector.connect(
     )
 
 for j in range(5):
-    for i, objectname in enumerate(random.shuffle(object_list)[10000:]):
+    random.shuffle(object_list)
+    for i, objectname in enumerate(object_list[10000:]):
         print i, objectname
         query_normal = ("SELECT RA FROM obsdat WHERE `usnoref`='" + str(objectname) + "';")
         query_partitioned = ("SELECT RA FROM obsdat100split WHERE `usnoref`='" + str(objectname) + "';")

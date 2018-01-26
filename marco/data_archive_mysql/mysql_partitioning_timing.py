@@ -75,7 +75,6 @@ for j in range(5):
 conn.close()
 
 
-
 # Get the query time, has to be done in the same session as the queries above
 # `SQL_TEXT`, `TIMER_WAIT`/1000000000000
 query_time = ("SELECT * FROM `events_statements_history_long` WHERE `CURRENT_SCHEMA`='sktobs' AND `EVENT_NAME`='statement/sql/select';")
@@ -91,8 +90,8 @@ events_statements_history_long = cur.fetchall()
 cur.close()
 conn.close()
 events_statements_history_long = np.array(events_statements_history_long)
-np.save('events_statements_history_long.npy', events_statements_history_long)
 
+np.save('events_statements_history_long.npy', events_statements_history_long)
 np.save('n_normal.npy', n_normal)
 np.save('n_partitioned.npy', n_partitioned)
 
@@ -107,10 +106,7 @@ xlabel('Single table')
 ylabel('100-partition table')
 grid()
 
-
 figure(2)
 clf()
 hist(time_elapsed_normal/time_elapsed_partitioned, bins=200,range=(0,200))
 grid()
-
-

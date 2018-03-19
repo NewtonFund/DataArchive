@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+
+<link rel="stylesheet" href="stylesheets/style.css">
+
+
+</head>
+
+<body>
+
+<h3>Hello</h3>
+
+Query the first 10 lines. <button id=1>Go</button>
+
+<div id='resultdiv'>
+  <table class='outputtable'></table>
+</div>
+
+Query the first 10 lines with obsnum greater than <input type="value" value=100></input>. <button id=2>Go</button>
+
+<div id='resultdiv2'>
+  <table class='outputtable2'></table>
+</div>
+
+</body>
+</html>
+
+<script>
+$(document).ready(function(){
+    $("button#1").click(function(){
+    	$('#resultdiv th tr td').remove();
+        $.get("/query_fixed", function(data, status)
+        {
+            var fieldname = data.fields;
+            var result = data.rows;
+            
+            $("#resultdiv .outputtable tr").remove();
+
+            $("#resultdiv .outputtable")
+                .append($("<tr>"));
+			// Add table header
+            for (i = 0; i < fieldname.length; i++) 
+            {
+                $("#resultdiv .outputtable tr")
+                  .append($("<th>")
+                  .append(fieldname[i].name));
+            }
+
+			// Add table body
+            for (j = 0; j < result.length; j++) 
+            {
+            	var row = result[j]
+            	$("#resultdiv .outputtable")
+            	  .append($("<tr>")
+            	  .attr('id', j));
+                var tr_item = "#resultdiv .outputtable tr#" + j;
+            	// loop thorugh the columns
+            	for (k=0; k< fieldname.length; k++)
+            	{
+			      $(tr_item)
+			        .attr('id', j)
+			        .append($("<td>")
+			        .append(row[fieldname[k].name]));
+			      console.log($(tr_item));
+			    }
+			}
+        });
+    });
+});
+
+$(document).ready(function(){
+    $("button#2").click(function(){
+    	    $('#resultdiv2 th tr td').remove();
+		    var input_value = $("input").val();
+		    console.log(input_value);
+	        $.post("/query_obsnum", {min_obsnum: input_value}, function(data, status)
+	        {
+	            var fieldname = data.fields;
+	            var result = data.rows;
+	            
+		        $("#resultdiv2 .outputtable2 tr").remove();
+
+		        $("#resultdiv2 .outputtable2")
+		            .append($("<tr>"));
+				// Add table header
+		        for (i = 0; i < fieldname.length; i++) 
+		        {
+		            $("#resultdiv2 .outputtable2 tr")
+		              .append($("<th>")
+		              .append(fieldname[i].name));
+		        }
+
+				// Add table body
+	            for (j = 0; j < result.length; j++) 
+	            {
+	            	var row = result[j]
+	            	$("#resultdiv2 .outputtable2")
+	            	  .append($("<tr>")
+	            	  .attr('id', j));
+	                var tr_item = "#resultdiv2 .outputtable2 tr#" + j;
+	            	// loop thorugh the columns
+	            	for (k=0; k< fieldname.length; k++)
+	            	{
+				      $(tr_item)
+				        .attr('id', j)
+				        .append($("<td>")
+				        .append(row[fieldname[k].name]));
+				      console.log($(tr_item));
+				    }
+				}
+	        });
+
+	});
+});
+
+</script>
+

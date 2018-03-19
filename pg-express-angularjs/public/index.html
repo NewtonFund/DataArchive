@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.9/angular.min.js"></script>
+    <link rel="stylesheet" href="stylesheets/style.css">
+  </head>
+
+  <body ng-app="mainApp">
+    <h3>Hello</h3>
+    <div ng-controller="psqlController">
+      Query the first 10 lines. <button ng-click="query()">Go</button>
+      <table>
+        <th ng-repeat="fieldname in data.fields">{{ fieldname.name }}</th>
+        <tr ng-repeat="result in data.rows">
+          <td ng-repeat="fieldname in data.fields">{{ result[fieldname.name] }}</td>
+        </tr>
+      </table>
+    </div>
+
+    <div ng-controller="psqlController2">
+      Query the first 10 lines with obsnum greater than <input type="value" value=100 ng-init="minval=100" ng-model="minval"></input>. <button ng-click="query_obsnum(minval)">Go</button>
+      <table>
+        <th ng-repeat="fieldname in data.fields">{{ fieldname.name }}</th>
+        <tr ng-repeat="result in data.rows">
+          <td ng-repeat="fieldname in data.fields">{{ result[fieldname.name] }}</td>
+        </tr>
+      </table>
+    </div>
+
+  </body>
+</html>
+
+<script>
+  var mainApp = angular.module("mainApp", []);
+
+  mainApp.controller('psqlController', function($scope, $http) {
+
+    $scope.query = function()
+    {
+        $http.get("/query_fixed")
+        .then(function(response) {
+            //First function handles success
+            $scope.data = response.data;
+            //console.log(response.data);
+        }, function(response) {
+            //Second function handles error
+            console.log("Something went wrong");
+        });
+    };
+
+  });
+
+
+  mainApp.controller('psqlController2', function($scope, $http) {
+
+    $scope.query_obsnum = function(minval)
+    {
+        $http.post("/query_obsnum", {minval})
+        .then(function(response) {
+            //First function handles success
+            $scope.data = response.data;
+            //console.log(response.data);
+        }, function(response) {
+            //Second function handles error
+            console.log("Something went wrong");
+        });
+    };
+
+  });
+
+
+
+
+</script>

@@ -7,6 +7,10 @@ a {
   color: #00B7FF;
 }
 
+.inputBox {
+   width: 100px;
+}
+
 table {
 	width: 750px;
 	border-collapse: collapse,

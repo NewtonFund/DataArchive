@@ -114,7 +114,7 @@ router.post('/query_full', function(req, res, next)
   };
 
   // If query altitude
-  if (checkbox.altitutde) {
+  if (checkbox.altitude) {
     altitude_condition = ' AND altitude BETWEEN ' + ALT_min + ' AND ' + ALT_max + ' ';
   };
 
@@ -209,6 +209,27 @@ router.post('/get_files', function(req, res, next)
     // Only send back public path here
     res.send(filename);
     console.log(filename);
+    
+  })
+
+});
+
+
+
+router.post('/get_rows', function(req, res, next) 
+{
+  //console.log(req.body);
+  var selected_rows = req.body;
+  var query_string = 'SELECT * from allkeys WHERE __obsnum IN (' + selected_rows + ') ';
+  
+  pool.query(query_string, (err, result) => {
+    if (err) {
+      return console.log(err.stack)
+    }
+
+    // Only send back public path here
+    res.send(result);
+    //console.log(result);
     
   })
 

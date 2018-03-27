@@ -1,4 +1,4 @@
-var mainApp = angular.module("mainApp", ["ngTable"]);
+var mainApp = angular.module("mainApp", ["ngTable", "nvd3"]);
 
 mainApp.controller('psqlController', function($scope, $http) {
 
@@ -146,7 +146,7 @@ mainApp.controller('queryFormController', function($scope, $http, $window, NgTab
   }
 
   // pass the data to here >>
-  $scope.getAllSelectedRows = function()
+  $scope.getSelectedRows = function()
   {
     if ($scope.selectedRows.length == 0) {
       alert('No item is selected')
@@ -170,12 +170,12 @@ mainApp.controller('queryFormController', function($scope, $http, $window, NgTab
     if ($scope.allRows.length == 0) {
       alert('No item is selected')
     } else {
-      $http.post("/get_files", allRows)
+      $http.post("/get_files", $scope.allRows)
       .then(function(response)
       {
         console.log(response.data);
-        $scope.downloadLink = response.data;
-        $scope.downloadLinkReady = true;
+        $scope.downloadLinkAll = response.data;
+        $scope.downloadLinkAllReady = true;
         //$window.open(response.data);
       }, function(response)
       {
@@ -184,6 +184,68 @@ mainApp.controller('queryFormController', function($scope, $http, $window, NgTab
     }
   }
 
+  // pass the data to here >>
+  $scope.plotSelectedRows = function()
+  {
+    if ($scope.selectedRows.length == 0) {
+      alert('No item is selected')
+    } else {
+      $http.post("/get_rows", $scope.selectedRows)
+      .then(function(response)
+      {
+        $scope.plotData = [{
+          key: "allkeys_table",
+          values: response.data.rows
+          }]
+      console.log($scope.plotData);
+      }, function(response)
+      {
+        console.log("Something went wrong");
+      });
+    }
+  }
+
+  $scope.options = {
+    chart: {
+      type: "scatterChart",
+      height: 600,
+      margin : {
+        top: 20,
+        right: 20,
+        bottom: 60,
+        left: 80
+      },
+      x: function(d) { return d.ra_degree; },
+      y: function(d) { return d.dec_degree; },
+      showValues: true,
+      valueFormat: function(d) {
+        return d3.format(',.4f')(d);
+      },
+      transitionDuration: 20,
+      xAxis: {
+        axisLabel: 'X Axis',
+        showMaxMin: false
+      },
+      yAxis: {
+        axisLabel: 'Y Axis',
+        showMaxMin: false,
+        axisLabelDistance: 5
+      },
+      showXAis: true,
+      showYAis: true,
+      zoom: {
+        enabled: true,
+        scaleExtent: [
+          0.5,
+          10
+        ],
+        useFixedDomain: false,
+        useNiceScale: true,
+        horizontalOff: false,
+        verticalOff: false
+      }
+    }
+  };
 
 
 //  $scope.select_data = function(filename) {

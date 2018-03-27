@@ -4,9 +4,13 @@
   <head>
     <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.9/angular.min.js"></script>
     <script src="https://unpkg.com/ng-table@2.0.2/bundles/ng-table.min.js"></script>
+    <script src="http://d3js.org/d3.v3.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nvd3/1.8.6/nv.d3.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/angular-nvd3/1.0.8/angular-nvd3.min.js"></script>
 
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css"></link>
     <link rel="stylesheet" href="https://unpkg.com/ng-table@2.0.2/bundles/ng-table.min.css"></link>
+    <link rel="stylesheet" href="https://cdn.rawgit.com/novus/nvd3/v1.8.1/build/nv.d3.css"></link>
     
     <script src="javascripts/mainApp.js"></script>
     <link rel="stylesheet" href="stylesheets/style.css">
@@ -91,17 +95,20 @@
       <button ng-click="send_query(queryModel, checkboxModel)">Go</button>
       <br/>
       <br/>
-      <table ng-table-dynamic="pgOutput with columnNames" show-filter='false'>
-        <tr ng-repeat="row in $data track by row.__obsnum" ng-click="select_data(row.__obsnum)">
+      <table class="pgOutput" ng-table-dynamic="pgOutput with columnNames" show-filter='false'>
+        <tr ng-repeat="row in $data track by row.__obsnum" ng-click="select_data(row.__obsnum)" ng-class="{'selected': selectedRows.includes(row.__obsnum)}">
           <td ng-repeat="col in columnNames"> <!--{{ $index }}-->{{ row[col.field] }}</td>
         </tr>
       </table>
 
-      <button ng-click='getAllSelectedRows()'>Create Link for selected data.</button>
+      <button ng-click='getSelectedRows()'>Create Link for selected data.</button>
+      <button ng-click='plotSelectedRows()'>Plot the selected data.</button>
       <a ng-href="{{ downloadLink }}" download>
         <button ng-if="downloadLinkReady" >Download</button>
       </a>
-
+      <br/>
+      <nvd3 options='options' data='plotData'> </nvd3>
+      <br/>
       <button ng-click='getAllRows()'>Create Link for all data.</button>
       <a ng-href="{{ downloadLinkAll }}" download>
         <button ng-if="downloadLinkAllReady" >Download</button>

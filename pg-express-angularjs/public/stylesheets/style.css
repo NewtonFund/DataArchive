@@ -11,26 +11,44 @@ a {
    width: 100px;
 }
 
-table {
+table.pgOutput {
 	width: 750px;
 	border-collapse: collapse,
 	margin:50px auto;
 }
 
-tr:nth-of-type(odd) {
+table.pgOutput tr:nth-of-type(odd) {
 	background: #eee;
 }
 
-th {
+table.pgOutput tr:hover {
+	background: #1a3278;
+	color: white;
+}
+
+table.pgOutput tr:active {
+	background: #266ebc;
+}
+
+table.pgOutput th {
 	background: #3498db;
 	color: white;
 	font-weight: bold;
 }
 
-td, th {
+table.pgOutput td, th {
 	padding: 10px;
 	border: 1px solid #ccc;
 	text-align: left;
     font-size: 18px;
 }
 
+table.pgOutput tr.selected {
+	background: #1a3278;
+	color: white;
+}
+
+
+.nvd3 .nv-axis.nv-x path.domain {
+	stroke-opacity: 1;
+}

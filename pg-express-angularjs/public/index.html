@@ -11,110 +11,44 @@
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css"></link>
     <link rel="stylesheet" href="https://unpkg.com/ng-table@2.0.2/bundles/ng-table.min.css"></link>
     <link rel="stylesheet" href="https://cdn.rawgit.com/novus/nvd3/v1.8.1/build/nv.d3.css"></link>
+
+
+  <link type="text/css" rel="stylesheet" href="javascripts/js9/js9support.css">
+  <link type="text/css" rel="stylesheet" href="javascripts/js9/js9.css">
+  <link rel="apple-touch-icon" href="javascripts/js9/images/js9-apple-touch-icon.png">
+  <script type="text/javascript" src="javascripts/js9/js9prefs.js"></script>
+  <script type="text/javascript" src="javascripts/js9/js9support.min.js"></script>
+  <script type="text/javascript" src="javascripts/js9/js9.min.js"></script>
+  <script type="text/javascript" src="javascripts/js9/js9plugins.js"></script>
+
+
     
     <script src="javascripts/mainApp.js"></script>
     <link rel="stylesheet" href="stylesheets/style.css">
   </head>
 
-  <body ng-app="mainApp">
-    <h3>Testing node-postgres.</h3>
-    <!--
-    <div ng-controller="psqlController">
-      Query the first 10 lines. <button ng-click="query()">Go</button>
-      <table>
-        <th ng-repeat="fieldname in data.fields">{{ fieldname.name }}</th>
-        <tr ng-repeat="result in data.rows">
-          <td ng-repeat="fieldname in data.fields">{{ result[fieldname.name] }}</td>
-        </tr>
-      </table>
-    </div>
-
-    <div ng-controller="psqlController2">
-      Query the first 10 lines with obsnum greater than <input type="value" value=100 ng-init="minval=100" ng-model="minval"></input>. <button ng-click="query_obsnum(minval)">Go</button>
-      <table>
-        <th ng-repeat="fieldname in data.fields">{{ fieldname.name }}</th>
-        <tr ng-repeat="result in data.rows">
-          <td ng-repeat="fieldname in data.fields">{{ result[fieldname.name] }}</td>
-        </tr>
-      </table>
-    </div>
--->
-
-    <div ng-controller="queryFormController">
-      Please select the query parameters (limit 1000):
-      <br/>
-      <br/>
-      <label>&nbsp;<input type="checkbox" ng-model="checkboxModel.position" ng-init="checkboxModel.position" >&nbsp; RA, Dec and Search Radius (arcsec) in decimal degrees</label>
-      <input type="value" class="inputBox" ng-if="checkboxModel.position" ng-init="queryModel.RA" ng-model="queryModel.RA">
-      <input type="value" class="inputBox" ng-if="checkboxModel.position" ng-init="queryModel.DEC" ng-model="queryModel.DEC">
-      <input type="value" class="inputBox" ng-if="checkboxModel.position" ng-init="queryModel.RADIUS" ng-model="queryModel.RADIUS">
-      <br/>
-      <label>&nbsp;<input type="checkbox" ng-model="checkboxModel.mjd">&nbsp; Modified Julian Day (MJD) </label>
-      <input type="value" ng-if="checkboxModel.mjd" ng-init="queryModel.MJD_min" ng-model="queryModel.MJD_min">
-      <input type="value" ng-if="checkboxModel.mjd" ng-init="queryModel.MJD_max" ng-model="queryModel.MJD_max">
-      <br/>
-      <label>&nbsp;<input type="checkbox" ng-model="checkboxModel.exptime" >&nbsp; Exposure Time </label>
-      <input type="value" ng-if="checkboxModel.exptime" ng-init="queryModel.EXPTIME_min" ng-model="queryModel.EXPTIME_min">
-      <input type="value" ng-if="checkboxModel.exptime" ng-init="queryModel.EXPTIME_max" ng-model="queryModel.EXPTIME_max">
-      <br/>
-      <label>&nbsp;<input type="checkbox" ng-model="checkboxModel.azimuth" >&nbsp; Azimuth</label>
-      <input type="value" ng-if="checkboxModel.azimuth" ng-init="queryModel.AZI_min" ng-model="queryModel.AZI_min">
-      <input type="value" ng-if="checkboxModel.azimuth" ng-init="queryModel.AZI_max" ng-model="queryModel.AZI_max">
-      <br/>
-      <label>&nbsp;<input type="checkbox" ng-model="checkboxModel.altitude" >&nbsp; Altitude</label>
-      <input type="value" ng-if="checkboxModel.altitude" ng-init="queryModel.ALT_min" ng-model="queryModel.ALT_min">
-      <input type="value" ng-if="checkboxModel.altitude" ng-init="queryModel.ALT_max" ng-model="queryModel.ALT_max">
-      <br/>
-      <label>&nbsp;<input type="checkbox" ng-model="checkboxModel.seeing" >&nbsp; Seeing</label>
-      <input type="value" ng-if="checkboxModel.seeing" ng-init="queryModel.SEEING_min" ng-model="queryModel.SEEING_min">
-      <input type="value" ng-if="checkboxModel.seeing" ng-init="queryModel.SEEING_max" ng-model="queryModel.SEEING_max">
-      <br/>
-      <label>&nbsp;<input type="checkbox" ng-model="checkboxModel.airmass" >&nbsp; Airmass</label>
-      <input type="value" ng-if="checkboxModel.airmass" ng-init="queryModel.AIRMASS_min" ng-model="queryModel.AIRMASS_min">
-      <input type="value" ng-if="checkboxModel.airmass" ng-init="queryModel.AIRMASS_max" ng-model="queryModel.AIRMASS_max">
-      <br/>
-      <label>&nbsp;<input type="checkbox" ng-model="checkboxModel.tagid" >&nbsp; Tag ID</label>
-      <input type="value" ng-if="checkboxModel.tagid" ng-init="queryModel.TAGID" ng-model="queryModel.TAGID">
-      <br/>
-<!--      <label>&nbsp;<input type="checkbox" ng-model="checkboxModel.userid" >&nbsp; User ID</label>
-      <input type="value" ng-if="checkboxModel.userid" ng-init="queryModel.USERID" ng-model="queryModel.USERID">
-      <br/>-->
-      <label>&nbsp;<input type="checkbox" ng-model="checkboxModel.propid" >&nbsp; Proposal ID</label>
-      <input type="value" ng-if="checkboxModel.propid" ng-init="queryModel.PROPID" ng-model="queryModel.PROPID">
-      <br/>
-      <label>&nbsp;<input type="checkbox" ng-model="checkboxModel.groupid" >&nbsp; Group ID</label>
-      <input type="value" ng-if="checkboxModel.groupid" ng-init="queryModel.GROUPID" ng-model="queryModel.GROUPID">
-      <br/>
-      <label>&nbsp;<input type="checkbox" ng-model="checkboxModel.obsid" >&nbsp; Observation ID</label>
-      <input type="value" ng-if="checkboxModel.obsid" ng-init="queryModel.OBSID" ng-model="queryModel.OBSID">
-      <br/>
-      <label>&nbsp;<input type="checkbox" ng-model="checkboxModel.limit" >&nbsp; Limit</label>
-      <input type="value" ng-if="checkboxModel.limit" ng-init="queryModel.LIMIT" ng-model="queryModel.LIMIT">
-      <br/>
-      <br/>
-      <button ng-click="send_query(queryModel, checkboxModel)">Go</button>
-      <br/>
-      <br/>
-      <table class="pgOutput" ng-table-dynamic="pgOutput with columnNames" show-filter='false'>
-        <tr ng-repeat="row in $data track by row.__obsnum" ng-click="select_data(row.__obsnum)" ng-class="{'selected': selectedRows.includes(row.__obsnum)}">
-          <td ng-repeat="col in columnNames"> <!--{{ $index }}-->{{ row[col.field] }}</td>
-        </tr>
-      </table>
-
-      <button ng-click='getSelectedRows()'>Create Link for selected data.</button>
-      <button ng-click='plotSelectedRows()'>Plot the selected data.</button>
-      <a ng-href="{{ downloadLink }}" download>
-        <button ng-if="downloadLinkReady" >Download</button>
-      </a>
-      <br/>
-      <nvd3 options='options' data='plotData'> </nvd3>
-      <br/>
-      <button ng-click='getAllRows()'>Create Link for all data.</button>
-      <a ng-href="{{ downloadLinkAll }}" download>
-        <button ng-if="downloadLinkAllReady" >Download</button>
-      </a>
-
-    </div>
-
+  <body>
+    <a href='DataArchive.html'>Data Archive</a>
+    </br>
+    <a href='../javascripts/js9/js9.html'>JS9 - FITS file viewer/analyser</a>
+    </br>
+    <a onclick=newJS9window("temp_files/d_e_20180417_4_0_2_1.fits")>Open FITS file in a new window.</a>
+    </br>
+    <a href='rgbFalseColour.html'>Create RGB false colour image</a>
+    </br>
+    <a href='glfxTestPage.html'>Image manipulation with glfx.js</a>
   </body>
+
+
+<script>
+  function newJS9window(filename) {
+    JS9.LoadWindow(
+      url=filename,
+      opts={scale:"log"},
+      type="light"
+      )
+  }
+</script>
+
+
 </html>

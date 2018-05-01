@@ -1,5 +1,6 @@
 var mainApp = angular.module("mainApp", ["ngTable", "nvd3"]);
 
+/*
 mainApp.controller('psqlController', function($scope, $http) {
 
   $scope.query = function()
@@ -16,7 +17,7 @@ mainApp.controller('psqlController', function($scope, $http) {
   };
 
 });
-
+*/
 
 mainApp.controller('psqlController2', function($scope, $http) {
 
@@ -37,6 +38,15 @@ mainApp.controller('psqlController2', function($scope, $http) {
 
 
 mainApp.controller('queryFormController', function($scope, $http, $window, NgTableParams) {
+
+  $scope.openJS9 = function()
+  {
+    JS9.LoadWindow(
+      url="temp_files/d_e_20180417_4_0_2_1.fits",
+      opts={scale:"log"},
+      type="light"
+    );
+  }
 
   $scope.checkboxModel = {
     position: true,
@@ -78,12 +88,14 @@ mainApp.controller('queryFormController', function($scope, $http, $window, NgTab
     LIMIT: 1000
   };
 
+  $scope.showTheRest = false;
+
   $scope.send_query = function(queryModel, checkboxModel) {
       $http.post("/query_full", {queryModel, checkboxModel})
       .then(function(response) {
           //First function handles success
           var rows = response.data.rows;
-
+          //console.log('.then triggered')
           //console.log(response.data.fields);
           var colNames = Object.values(response.data.fields);
           
@@ -114,7 +126,11 @@ mainApp.controller('queryFormController', function($scope, $http, $window, NgTab
             //console.log(rows[i]);
             $scope.allRows.push(rows[i].__obsnum);
           }
-          console.log($scope.allRows);
+
+          if (rows.length > 0) {
+            $scope.showTheRest = true;
+          }
+          //console.log($scope.allRows);
           //$scope.allRows = rows.__obsnum;
 
       }, function(response) {
@@ -142,7 +158,7 @@ mainApp.controller('queryFormController', function($scope, $http, $window, NgTab
     if (exist == false) {
       $scope.selectedRows.push(item);
     }
-    console.log($scope.selectedRows);
+    //console.log($scope.selectedRows);
   }
 
   // pass the data to here >>
@@ -173,7 +189,7 @@ mainApp.controller('queryFormController', function($scope, $http, $window, NgTab
       $http.post("/get_files", $scope.allRows)
       .then(function(response)
       {
-        console.log(response.data);
+        //console.log(response.data);
         $scope.downloadLinkAll = response.data;
         $scope.downloadLinkAllReady = true;
         //$window.open(response.data);
@@ -184,7 +200,7 @@ mainApp.controller('queryFormController', function($scope, $http, $window, NgTab
     }
   }
 
-  // pass the data to here >>
+  // query the full table and store in the client memory
   $scope.plotSelectedRows = function()
   {
     if ($scope.selectedRows.length == 0) {
@@ -193,19 +209,106 @@ mainApp.controller('queryFormController', function($scope, $http, $window, NgTab
       $http.post("/get_rows", $scope.selectedRows)
       .then(function(response)
       {
-        $scope.plotData = [{
+        // this is called in the nvd3 tag
+        $scope.nvd3Data = [{
           key: "allkeys_table",
           values: response.data.rows
           }]
-      console.log($scope.plotData);
+        $scope.nvd3Header = response.data.fields;
+      //console.log($scope.nvd3plotData[0].values);
+      //console.log($scope.fullHeader);
+      $scope.updatePlot();
       }, function(response)
       {
         console.log("Something went wrong");
-      });
+      })
     }
   }
 
-  $scope.options = {
+  // query the full table and store in the client memory
+  $scope.plotAllRows = function()
+  {
+    $http.post("/get_rows", $scope.allRows)
+    .then(function(response)
+    {
+      // this is called in the nvd3 tag
+      $scope.nvd3AllData = [{
+        key: "allkeys_table",
+        values: response.data.rows
+        }]
+      $scope.nvd3AllHeader = response.data.fields;
+    //console.log($scope.nvd3plotData[0].values);
+    //console.log($scope.fullHeader);
+    $scope.updateAllPlot();
+    }, function(response)
+    {
+      console.log("Something went wrong");
+    })
+  }
+
+  $scope.updatePlot = function() {
+    var name1 = $scope.xAxisOption.name;
+    var name2 = $scope.yAxisOption.name;
+    //console.log(name1);
+    //console.log(name2);
+    // Need to make this nested
+    console.log( $scope.nvd3Data[0].values[0][name1] );
+    $scope.tempData = [];
+    for (var i=$scope.nvd3Data[0].values.length-1; i>=0; i--) {
+      //console.log(rows[i]);
+      $scope.tempData.push({
+        x: $scope.nvd3Data[0].values[i][name1],
+        y: $scope.nvd3Data[0].values[i][name2]
+      });
+    }
+    $scope.nvd3PlotData = [{
+      key: "allkeys_table",
+      values: $scope.tempData
+      }]
+
+    console.log($scope.nvd3PlotData);
+    $scope.plotApi.updateWithData($scope.nvd3PlotData);
+    /*var tempData = $scope.nvd3Data[0].values[name1];
+    $scope.nvd3PlotData = [{
+      key: "allkeys_table",
+      values: tempData
+      }]
+    console.log($scope.nvd3PlotData);*/
+  }
+
+
+  $scope.updateAllPlot = function() {
+    var name1 = $scope.xAxisOptionAll.name;
+    var name2 = $scope.yAxisOptionAll.name;
+    //console.log(name1);
+    //console.log(name2);
+    // Need to make this nested
+    console.log( $scope.nvd3AllData[0].values[0][name1] );
+    $scope.tempAllData = [];
+    for (var i=$scope.nvd3AllData[0].values.length-1; i>=0; i--) {
+      //console.log(rows[i]);
+      $scope.tempAllData.push({
+        x: $scope.nvd3AllData[0].values[i][name1],
+        y: $scope.nvd3AllData[0].values[i][name2]
+      });
+    }
+    $scope.nvd3PlotAllData = [{
+      key: "allkeys_table",
+      values: $scope.tempAllData
+      }]
+
+    console.log($scope.nvd3AllPlotData);
+    $scope.plotAllApi.updateWithData($scope.nvd3AllPlotData);
+    /*var tempData = $scope.nvd3Data[0].values[name1];
+    $scope.nvd3PlotData = [{
+      key: "allkeys_table",
+      values: tempData
+      }]
+    console.log($scope.nvd3PlotData);*/
+  }
+
+
+  $scope.nvd3options = {
     chart: {
       type: "scatterChart",
       height: 600,
@@ -215,13 +318,19 @@ mainApp.controller('queryFormController', function($scope, $http, $window, NgTab
         bottom: 60,
         left: 80
       },
-      x: function(d) { return d.ra_degree; },
-      y: function(d) { return d.dec_degree; },
+      x: function(d) { 
+        //console.log(d[$scope.xAxisOption.name]);
+        //console.log(d.ra_degree);
+        //console.log(d);
+        return d.x;
+      },
+      //y: function(d) { return d[$scope.yAxisOption.name]; },
+      y: function(d) { return d.y; },
       showValues: true,
       valueFormat: function(d) {
         return d3.format(',.4f')(d);
       },
-      transitionDuration: 20,
+      transitionDuration: 10,
       xAxis: {
         axisLabel: 'X Axis',
         showMaxMin: false
@@ -245,7 +354,7 @@ mainApp.controller('queryFormController', function($scope, $http, $window, NgTab
         verticalOff: false
       }
     }
-  };
+  }
 
 
 //  $scope.select_data = function(filename) {
@@ -253,3 +362,16 @@ mainApp.controller('queryFormController', function($scope, $http, $window, NgTab
 //  }
 
 });
+
+mainApp.directive('ngRightClick', function($parse) {
+  return function(scope, element, attrs) {
+    var fn = $parse(attrs.ngRightClick);
+    element.bind('contextmenu', function(event) {
+      scope.$apply(function() {
+        event.preventDefault();
+        fn(scope, {$event:event});
+      });
+    });
+  };
+});
+

@@ -3,7 +3,7 @@ var router = express.Router();
 var path = require('path');
 //var childProcess = require('child_process');
 var fs = require('fs');
-const { Pool } = require('pg')
+const { Pool } = require('pg');
 
 const pool = new Pool({
   user: 'dbuser',
@@ -57,7 +57,6 @@ router.post('/query_full', function(req, res, next)
   //console.log('are they printed? > < !');
   var query = req.body.queryModel,
       checkbox = req.body.checkboxModel;
-
   var RA = query.RA,
       DEC = query.DEC,
       RADIUS = query.RADIUS,

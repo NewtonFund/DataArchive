@@ -179,7 +179,7 @@
     };
     var AutoScale = function(){
       var imarr = JS9.GetDisplayData("array");
-      console.log(JS9.GetColormap());
+      //console.log(JS9.GetColormap());
       for(i=0; i<imarr.length; i++){
         var im = JS9.LookupImage(filename[i]);
         var p0 = ss.quantile(imarr[i].data, 0.);

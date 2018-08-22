@@ -1,6 +1,6 @@
 {
   "name": "js9",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "description": "astronomical image display everywhere",
   "main": "js9.js",
   "scripts": {
@@ -21,7 +21,18 @@
     "url": "https://github.com/ericmandel/js9/issues"
   },
   "bundledDependencies": [
-    "connected-domain", "minimist", "node-uuid", "opn", "ps-node", "rimraf", "socket.io", "table-parser"
+    "connected-domain",
+    "minimist",
+    "uuid",
+    "opn",
+    "ps-node",
+    "rimraf",
+    "socket.io",
+    "table-parser"
   ],
-  "homepage": "https://js9.si.edu"
+  "homepage": "https://js9.si.edu",
+  "dependencies": {
+    "socket.io": "^2.1.1",
+    "uuid": "^3.2.1"
+  }
 }

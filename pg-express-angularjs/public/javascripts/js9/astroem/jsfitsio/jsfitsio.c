@@ -180,12 +180,14 @@ fitsfile *ffhist3(fitsfile *fptr, /* I - ptr to table with X and Y cols*/
 // this is how xray binary tables are imaged automatically
 fitsfile *gotoFITSHDU(fitsfile *fptr, char *extlist, int *hdutype, int *status){
   int hdunum, naxis, thdutype, gotext=0;
+  long naxes[IDIM] = {0, 0, 0, 0};
   char *ext, *textlist;
   // if this is the primary array and it does not contain an image,
   // try to move to something more reasonble
   fits_get_hdu_num(fptr, &hdunum); *status = 0;
   fits_get_img_dim(fptr, &naxis, status); *status = 0;
-  if( (hdunum == 1) && (naxis == 0) ){
+  fits_get_img_size(fptr, min(IDIM,naxis), naxes, status); *status = 0;
+  if( (hdunum == 1) && ((naxis == 0) || naxes[0] == 0) ){
     // look through the extension list
     if( extlist ){
       gotext = 0;
@@ -285,6 +287,30 @@ void updateWCS(fitsfile *fptr, fitsfile *ofptr,
       dval = dval * bin;
       fits_update_key(ofptr, TDOUBLE, "CDELT2", &dval, comment, &status);
     }
+    dval = 0.0; *comment = '\0'; status = 0;
+    fits_read_key(fptr, TDOUBLE, "CD1_1", &dval, comment, &status);
+    if( status == 0 ){
+      dval = dval * bin;
+      fits_update_key(ofptr, TDOUBLE, "CD1_1", &dval, comment, &status);
+    }
+    dval = 0.0; *comment = '\0'; status = 0;
+    fits_read_key(fptr, TDOUBLE, "CD1_2", &dval, comment, &status);
+    if( status == 0 ){
+      dval = dval * bin;
+      fits_update_key(ofptr, TDOUBLE, "CD1_2", &dval, comment, &status);
+    }
+    dval = 0.0; *comment = '\0'; status = 0;
+    fits_read_key(fptr, TDOUBLE, "CD2_1", &dval, comment, &status);
+    if( status == 0 ){
+      dval = dval * bin;
+      fits_update_key(ofptr, TDOUBLE, "CD2_1", &dval, comment, &status);
+    }
+    dval = 0.0; *comment = '\0'; status = 0;
+    fits_read_key(fptr, TDOUBLE, "CD2_2", &dval, comment, &status);
+    if( status == 0 ){
+      dval = dval * bin;
+      fits_update_key(ofptr, TDOUBLE, "CD2_2", &dval, comment, &status);
+    }
   }
   // update ltm/ltv values, using center to calculate ltv values
   if( dim1 && dim2 ){
@@ -325,7 +351,7 @@ void updateWCS(fitsfile *fptr, fitsfile *ofptr,
 
 // getImageToArray: extract a sub-section from an image HDU, return array
 void *getImageToArray(fitsfile *fptr, int *dims, double *cens,
-		      int bin, char *slice,
+		      int bin, int binMode, char *slice,
 		      int *start, int *end, int *bitpix, int *status){
   int i, j, naxis, dim1, dim2, maxdim1, maxdim2, odim1, odim2, hidim1, hidim2;
   int ttype, tsize;
@@ -333,6 +359,7 @@ void *getImageToArray(fitsfile *fptr, int *dims, double *cens,
   int ojoff = 0;
   int tstatus = 0;
   int doscale = 0;
+  int bin2;
   void *obuf, *rbuf;
   long totpix, totbytes;
   long naxes[IDIM], fpixel[IDIM], lpixel[IDIM], myfpixel[IDIM], inc[IDIM];
@@ -658,6 +685,36 @@ void *getImageToArray(fitsfile *fptr, int *dims, double *cens,
     free(rbuf);
   }
 
+  // average, if necessary
+  if( (bin > 1) && ((binMode == 1) || (binMode == 'a')) ){
+    bin2 = bin * bin;
+    totpix = odim1 * odim2 / bin2;
+    for(i=0; i<totpix; i++){
+      switch(*bitpix){
+      case 8:
+	cobuf[i] /= bin2;
+	break;
+      case 16:
+	sobuf[i] /= bin2;
+	break;
+      case -16:
+	usobuf[i] /= bin2;
+	break;
+      case 32:
+	iobuf[i] /= bin2;
+	break;
+      case 64:
+	lobuf[i] /= bin2;
+	break;
+      case -32:
+	fobuf[i] /= bin2;
+	break;
+      case -64:
+	dobuf[i] /= bin2;
+	break;
+      }
+    }
+  }
   // return pixel buffer (and section dimensions)
   return obuf;
 }

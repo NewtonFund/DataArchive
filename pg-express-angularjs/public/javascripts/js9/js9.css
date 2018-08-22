@@ -109,6 +109,11 @@ div.JS9MenubarContainer-flat, div.JS9MenubarContainer-border {
     background-color: lightblue;
 }
 
+/* CSS for images loaded as part of the user-defined menubar */
+img.JS9MenubarUserImage{
+    width: 50%
+}
+
 div.JS9ConsoleContainer {
     /* absolute pos top/left for positioning, Flanagan's JavaScript, p 357 */
     /* why is this relative?? absolute positions make it tiny!! */
@@ -666,4 +671,61 @@ canvas.surfacePlotCanvas {
 /* to make wait cursor override other element cursors (e.g. fabric.js canvas) */
 body.waiting, body.waiting * { 
     cursor: wait !important;
+}
+
+
+
+
+
+
+
+/* slider */
+
+.slidecontainer {
+    margin-top: 2px;
+    height: 600px; /* Width of the outside container */
+    width: 70px;
+}
+
+/* The slider itself */
+.slider {
+    -webkit-appearance: none;  /* Override default CSS styles */
+    appearance: none;
+    width: 600px; /* Full-width */
+    height: 70px; /* Specified height */
+    background: #1A3278; /* Grey background */
+    outline: none; /* Remove outline */
+    opacity: 0.7; /* Set transparency (for mouse-over effects on hover) */
+    -webkit-transition: .2s; /* 0.2 seconds transition on hover */
+    transition: opacity .2s;
+    transform-origin: 297px 298px;
+    transform: rotate(270deg);
+    -moz-transform: rotate(270deg);
+
+}
+
+/* Mouse-over effects */
+.slider:hover {
+    opacity: 1; /* Fully shown on mouse-over */
+}
+
+/* The slider handle (use -webkit- (Chrome, Opera, Safari, Edge) and -moz- (Firefox) to override default look) */
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none; /* Override default look */
+    appearance: none;
+    width: 30px; /* Set a specific slider handle width */
+    height: 70px; /* Slider handle height */
+    background: #C7D401; /* Green background */
+    cursor: pointer; /* Cursor on hover */
+}
+
+.slider::-moz-range-thumb {
+    width: 30px; /* Set a specific slider handle width */
+    height: 70px; /* Slider handle height */
+    background: #C7D401; /* Green background */
+    cursor: pointer; /* Cursor on hover */
+}
+
+.slidecontainerresetbutton {
+    width: 70px;
 }

@@ -143,13 +143,17 @@ Finally, you can pass a fits object containing the following properties:
 </ul>
 The difference between
 <a href="#JS9.RefreshImage"><b>JS9.RefreshImage()</b></a>
-and <b>JS9.Load()</b> is
+and <a href="#JS9.Load"><b>JS9.Load()</b></a> is
 that the former updates the data into an existing image, while the latter adds
 a completely new image to the display.
 <p>
 To override default image parameters, pass the image opts argument:
 <pre>
     JS9.Load("png/m13.png", {scale:"linear", colormap:"sls"});
+</pre>
+You can also pass a regions property to add regions:
+<pre>
+    JS9.Load("./fits/casa.fits", {regions:'ICRS; box(23:23:40.340, +58:47:04.059, 29.5", 29.5", 0)'});
 </pre>
 <p>
 If an onload callback function is specified in opts, it will be called
@@ -472,7 +476,7 @@ a considerable amount of transfer data.
 Given a FITS-standard 1-indexed image pixel x,y, you can find the data value 
 at that location using:
 <pre>
-    val = obj.data[Math.floor(y-1) * obj.width + Math.floor(x-1)];
+    val = obj.data[Math.floor(y-0.5) * obj.width + Math.floor(x-0.5)];
 </pre>
 Note the need to integerize the x and y values: JavaScript arrays are
 objects and so floating point array indices do not get truncated
@@ -616,15 +620,22 @@ display the section:
 <li><b>separate</b>: if true, display as a separate image (default is to update the current image)
 <li><b>ondisplaysection</b>: function to perform after section is displayed
 </ul>
+<p>
 The bin directives are:
 <ul>
-<li><b>x[n]|X[n]|*[n]</b>: multiply the current bin by n (e.g. "x2")
-<li><b>/[n]</b>: divide the current bin by n (e.g. "/2")
-<li><b>+[n]</b>: add n to the current bin (e.g. "+2")
-<li><b>-[n]</b>: subtract n from the current bin (e.g. "-2")
+<li><b>x[n]|X[n]|*[n]</b>: multiply the current bin by n (e.g., "x2")
+<li><b>/[n]</b>: divide the current bin by n (e.g., "/2")
+<li><b>+[n]</b>: add n to the current bin (e.g., "+2")
+<li><b>-[n]</b>: subtract n from the current bin (e.g., "-2")
 <li><b>in|In</b>: multiply the current bin by 2
 <li><b>out|Out</b>: divide the current bin by 2
+<li><b>[n]a</b>: bin by n, averaging the binned pixels
+<li><b>[n]s</b>: bin by n, summing the binned pixels
 </ul>
+Note that the <b>JS9.globalOpts.binMode</b> property specifies the
+default action for whether the binned pixels are summed together (if
+binMode is "s") or averaged (if binMode is "a"). This action is overridden
+by the last two bin directives listed above.
 
 <p>
 All properties are optional: if a property is not specified,
@@ -715,11 +726,11 @@ for information about HDUs and multi-extension FITS).
 <p>
 where:
 <ul>
-<li><b>slice</b>: slice description or slice number
+<li><b>slice</b>: slice description, slice number, or "all"
 <li><b>opts</b>: object containing options
 </ul>
 This routine allows you to display a 2D slice of a 3D or 4D FITS data
-cube, i.e.  a FITS image containing 3 or 4 axes.
+cube, i.e.,  a FITS image containing 3 or 4 axes.
 
 <p>
 The <b>slice</b> parameter can either be the numeric value of the
@@ -753,6 +764,9 @@ from the original file, allowing blinking, image blending, etc. between
 the two "files".  Note that the new id and filename are adjusted to be
 the original file's values with the cfitsio image section <b>[6:6,*,*]</b>
 appended.
+
+<p>
+If the first argument is "all", then all slices will be loaded into JS9 separately.
 
 <h5 id="JS9.BlendImage">Blend the image in an image stack using W3C composite/blend modes</h5>
 <p>
@@ -873,7 +887,13 @@ display. If no argument is specified, it returns the current blend mode.
 
 <h5 id="JS9.CloseImage">Clear the image from the display and mark resources for release</h5>
 <p>
-<code class="api">JS9.CloseImage()</code>
+<code class="api">JS9.CloseImage(opts)</code>
+<p>
+where:
+<ul>
+<li><b>opts</b>: optional object or json string containing image parameters
+</ul>
+<p>
 <p>
 Each loaded image claims a non-trivial amount of memory from a finite
 amount of browser heap space. For example, the default 32-bit version
@@ -883,10 +903,15 @@ image's memory can be freed. In principle, this is can help reduce
 overall memory usage as successive images are loaded and
 discarded. Note, however, that closing an image only provides a hint
 to the browser, since this sort of garbage collection is not directly
-accessible to JavaScript programming.
+accessible to JavaScript programming and happens when it happens.
 <p>
-Some day, all browsers will support full 64-bit addressing and this problem will
-go away ...
+The optional first argument is an opts object (or a json-formatted
+string) containing:
+<ul>
+<li><b>clear</b>: if explicitly set to false, the image will not be cleared
+</ul>
+The <b>clear</b> option is useful if you are repeatedly loading the same image
+and want to avoid the image blink associated with the clear.
 
 <h5 id="JS9.GetColormap">Get the image colormap</h5>
 <p>
@@ -948,7 +973,7 @@ where:
 <li><b>json</b>: json string containing one of the colormap definition formats
 </ul>
 You can add new colormaps to JS9 using one of two formats. The first
-is an array of RGB triplets (i.e. an array of 3-D arrays), where each
+is an array of RGB triplets (i.e., an array of 3-D arrays), where each
 triplet defines a color. The elements of the colormap are divided
 evenly between these 3-D triplets.  For example, the <b>i8</b>
 colormap is defined as:
@@ -1023,7 +1048,7 @@ where:
 Load the specified colormap file into the web page. The filename,
 which must be specified, can be a local file (with absolute path or a
 path relative to the displayed web page) or a URL. It should contain a
-JSON representation of a colormap, either in RGB color format or in
+json representation of a colormap, either in RGB color format or in
 vertex format (see
 <a href="#JS9.AddColormap"><b>JS9.AddColormap()</b></a>
 above):
@@ -1181,8 +1206,8 @@ where:
 </ul>
 The zoom directives are:
 <ul>
-<li><b>x[n]|X[n]|*[n]</b>: multiply the current zoom by n (e.g. "x2")
-<li><b>/[n]</b>: divide the current zoom by n (e.g. "/2")
+<li><b>x[n]|X[n]|*[n]</b>: multiply the current zoom by n (e.g., "x2")
+<li><b>/[n]</b>: divide the current zoom by n (e.g., "/2")
 <li><b>in|In</b>: multiply the current zoom by 2
 <li><b>out|Out</b>: divide the current zoom by 2
 <li><b>toFit|ToFit</b>: zoom to fit image in display
@@ -1227,7 +1252,7 @@ An object containing x and y properties can also be supplied.
 <p>
 where:
 <ul>
-<li><b>param</b>: name of the parameter
+<li><b>param</b>: name of the parameter or "all"
 </ul>
 <p>
 returns:
@@ -1241,6 +1266,7 @@ below in the
 <a href="#JS9.SetParam"><b>SetParam()</b></a>
 section.
 </p>
+In the value of param is "all", the entire param object is returned.
 
 <h5 id="JS9.SetParam">Set an image parameter value</h5>
 <p>
@@ -1248,13 +1274,13 @@ section.
 <p>
 where:
 <ul>
-<li><b>param</b>: name of the parameter
-<li><b>val</b>: new value of the parameter
+<li><b>param</b>: name of the parameter or "all"
+<li><b>val</b>: new value of the parameter or param object to merge
 </ul>
 <p>
 returns:
 <ul>
-<li><b>ovalue</b>: the previous value of the parameter
+<li><b>ovalue</b>: the previous value of the parameter or the new param object
 </ul>
 A number of miscellaneous image parameters are copied from the
 JS9.imageOpts object to each image when it is first loaded. You can
@@ -1283,6 +1309,10 @@ be useful when temporarily turning off a function. For example:
 will temporarily disable execution of the previously defined regions
 onload callback, resetting it to the old value after processing
 is complete.
+<p>
+If param is "all" and the second argument is an object, this object is
+merged into the current param object. This allows you to save the params from
+one image and restore them to another.
 
 <h5 id="JS9.EventToDisplayPos">Get the display coordinates from an event</h5>
 <p>
@@ -1401,10 +1431,10 @@ and returns an object containing the following information:
 <ul>
 <li><b>ix</b>: image x coordinate
 <li><b>iy</b>: image y coordinate
-<li><b>isys</b>: image system (i.e. "image")
+<li><b>isys</b>: image system (i.e., "image")
 <li><b>px</b>: physical x coordinate
 <li><b>py</b>: physical y coordinate
-<li><b>psys</b>: currently selected pixel-based system (i.e. "image"
+<li><b>psys</b>: currently selected pixel-based system (i.e., "image"
 or "physical") for the above px, py values
 <li><b>ra</b>: ra in degrees (if WCS is available)
 <li><b>dec</b>: dec in degrees  (if WCS is available)
@@ -1494,7 +1524,7 @@ the <b>File->alternate wcs</b> menu option.
 The <b>which</b> argument can be one of the following:
 <ul>
 <li><b>default</b>: the default WCS from the original file
-<li><b>[version]</b>: the version letter of the alternate WCS, i.e. <b>A-Z</b>
+<li><b>[version]</b>: the version letter of the alternate WCS, i.e., <b>A-Z</b>
 <li><b>[wcsname]</b>: the value of the WCSNAME header parameter associated
 with this WCS, if present
 </ul>
@@ -1606,6 +1636,285 @@ The text string is displayed in the "info" area (usually occupied by the
 valpos display) or the "region" area (where regions are displayed). The
 empty string will clear the previous message.
 
+<h5 id="JS9.DisplayCoordGrid">Display a WCS-based coordinate grid</h5>
+<p>
+<code class="api">JS9.DisplayCoordGrid(mode, opts)</code>
+<p>
+where:
+<ul>
+<li><b>mode</b>: true (display) or false (hide)
+<li><b>opts</b>: optional object or json string containing grid parameters
+</ul>
+A coordinate grid displays lines of constant RA and constant Dec, with
+the points of intersection labeled by their RA and Dec values. The
+labels are in sexagesimal notation if the WCS units are sexagesimal,
+otherwise they are in degrees. When using sexagesimal notation, labels
+will be shortened if possible, e.g., if the RA hours are the same in
+two successive labels but the minutes are different, only the minutes
+are shown in the second label.
+
+<p>
+If no arguments are supplied, the routine returns true if the
+coordinate grid is currently being displayed, false otherwise. A
+boolean first argument specifies whether to display the coordinate
+grid or not.
+
+<p>
+The optional second argument is an opts object (or a json-formatted
+string) containing properties to override the default JS9.Grid.opts
+properties. These properties include:
+<ul>
+<li><b>strokeWidth</b>: grid stroke width
+<li><b>lineColor</b>: color of RA and Dec grid lines
+<li><b>raLines</b>: approx. number of RA grid lines
+<li><b>raAngle</b>: rotation for RA label
+<li><b>raSkip</b>: number of RA lines to skip
+<li><b>decLines</b>: approx. number of Dec grid lines
+<li><b>decAngle</b>: rotation for Dec label
+<li><b>decSkip</b>: number of Dec lines to skip
+<li><b>labelColor</b>: color of text labels
+<li><b>labelFontFamily</b>: label font
+<li><b>labelFontSize</b>: label font size
+<li><b>labelFontStyle</b>: label font style
+<li><b>labelFontWeight</b>: label font weight
+<li><b>labelRAOffx</b>: x offset of RA labels
+<li><b>labelRAOffy</b>: y offset of RA labels
+<li><b>labelDecOffx</b>: x offset of Dec labels
+<li><b>labelDecOffy</b>: y offset of Dec labels
+<li><b>degPrec</b>: precision for degree labels
+<li><b>sexaPrec</b>: precision for sexagesimal labels
+<li><b>reduceDims</b>: reduce lines of smaller image dim?
+<li><b>stride</b>: fineness of grid lines
+<li><b>margin</b>: edge margin for displaying a line
+<li><b>labelMargin</b>: edge margin for displaying RA, Dec label
+<li><b>cover</b>: grid lines cover: display or image
+</ul>
+The <b>strokeWidth</b> property determines the width of the grid
+lines. It also serves as a reminder that you can pass other standard
+shape properties in the opts object.
+
+<p>
+JS9's label placement algorithm puts labels close to the intersection
+of RA and Dec lines. A number of properties can be useful in cases
+where this simple algorithm is not sufficient: the <b>raAngle</b>
+and <b>decAngle</b> properties allow you to rotate the labels with
+respect to the grid lines. The four label[RA,Dec]Off[x,y] properties
+allow you to move the label with respect to the grid lines.
+The <b>raSkip</b> and <b>decSkip</b> properties allow you to skip
+labelling the first available lines within the display. It can be
+useful, for example, on a rotated image, when the labels are placed in
+a corner.
+
+<p>
+The <b>degPrec</b> and <b>sexaPrec</b> properties specify the precision for
+degree values and sexagesimal values, respectively. Higher precision will
+use more digits and take more space along each line.
+
+<p>
+A number of properties are (more or less) internal but might be of
+use: the <b>reduceDims</b> property will reduce the <b>raLines</b>
+and <b>decLines</b> properties by the ratio of image dimensions if one
+dimension is smaller than the other. This can prevent crowding in the
+smaller dimension.  The <b>stride</b> property specifies the length of
+each line segment that together make up a grid line. A smaller stride
+might make the grid lines smoother in some cases, at the price of more
+processing time.  The <b>cover</b> property determines whether the
+grid is drawn over the entire image or just the displayed part of the
+image. At the moment, drawing lines over the displayed part of the
+image seems to be sufficient.
+
+<p>
+Note that you can specify global site-wide values for all these parameters
+(overriding the JS9.Grid.opts defaults) by supplying them in a <b>grid</b>
+object within the globalOpts object in the js9prefs.js file.
+
+<p>
+Example: display a coordinate grid, specifying the line color:
+<pre>
+    JS9.DisplayCoordGrid(true, {lineColor: "pink"});
+</pre>
+
+<h5 id="JS9.CountsInRegions">Get background-subtracted counts in regions</h5>
+<p>
+<code class="api">JS9.CountsInRegions(sregion, bregion, opts)</code>
+<p>
+where:
+<ul>
+<li><b>sregion</b>: any source region, or "$sregions" for displayed source regions
+<li><b>bregion</b>: any background region, or "$bregions" for displayed background regions
+<li><b>opts</b>:  optional object or json string containing region parameters
+</ul>
+The <a href="https://js9.si.edu/regions/regcnts.html">regcnts</a>
+program (and its predecessor, funcnts) counts photons in specified
+source regions and optionally, in specified background regions.
+Displayed results include the bkgd-subtracted counts in each region,
+as well as the error on the counts, the area in each region, and the
+surface brightness (cnts/area**2) calculated for each region. Regcnts
+for desktop use is available on
+<a href="https://github.com/ericmandel/regions">GitHub</a>.
+
+<p>
+The regcnts program has been compiled into JS9 using
+<a href="https://kripken.github.io/emscripten-site/">Emscripten</a>.
+Using this routine, it can be run on the FITS file stored in memory
+for the currently displayed image.  The first two arguments specify
+the <b>source region(s)</b> and <b>background region(s)</b>,
+respectively. You can pass a standard region specifier as the source
+or background region:
+<pre>
+    JS9.CountsInRegions('ICRS; circle(23:23:18.76, +58:47:27.25, 31.8&#34;)');
+</pre>
+If the string "$sregions" ("$bregions") is
+specified, the source (background) regions are taken from the
+currently displayed image. You also can specify a region selector
+using any of the following:
+<ul>
+<li><b>all</b>: all regions
+<li><b>selected</b>: the selected region (or regions in a selected group)
+<li><b>[color]</b>: regions of the specified color
+<li><b>[shape]</b>: regions of the specified shape
+<li><b>[tag]</b>:  regions having the specified tag
+<li><b>/[regexp]/</b>: regions with a tag matching the specified regexp
+</ul>
+For example:
+<pre>
+    # all regions
+    JS9.CountsInRegions('all');
+    # selected regions
+    JS9.CountsInRegions('selected');
+    # regions tagged with the "foo" tag
+    JS9.CountsInRegions('foo');
+</pre>
+Note that if you pass a region selector and no regions are returned, the
+routine will throw an error.
+
+<p>
+In keeping with how desktop regcnts works, if no argument or null or a
+null string is specified as the source region, the entire field is
+used as the source region. If no argument or null or a null string is
+explicitly specified as a background region, no regions are used for
+the background.  In particular, if you pass only the source region
+argument, or pass only the source region and opts arguments, no
+background region is used. To recap:
+<pre>
+    # use entire field, no background
+    JS9.CountsInRegions([opts])
+    JS9.CountsInRegions("field"||null||""[, opts])
+
+    # use displayed source and displayed background
+    JS9.CountsInRegions("$sregions", "$bregions"[, opts])
+
+    # use displayed source, no background
+    JS9.CountsInRegions("$sregions"[, opts])
+
+    # use displayed source and specified background
+    JS9.CountsInRegions("$sregions", bregions[, opts])
+
+    # use specified source, no background
+    JS9.CountsInRegions(sregions[, opts])
+
+    # use specified source and specified background
+    JS9.CountsInRegions(sregions, bregions[, opts])
+
+    # use specified source and displayed background
+    JS9.CountsInRegions(sregions, "$bregions"[, opts])
+
+   # use entire field and specified background
+    JS9.CountsInRegions("field"||null||"", bregions[, opts])
+
+    # use entire field and displayed background
+    JS9.CountsInRegions("field"||null||"", "$bregions"[, opts])
+</pre>
+
+The third argument allows you to specify options to regcnts:
+<ul>
+<li><b>cmdswitches</b>: command line switches passed to regcnts
+<li><b>dim</b>: size of reduced image (def: max of JS9.globalOpts.image.[xdim,ydim])
+<li><b>reduce</b>: reduce image size? (def: true)
+<li><b>lightwin</b>: if true, results are displayed in a light window
+</ul>
+The command line switches that can be specified in <b>cmdswitches</b> are
+detailed in the
+<a href="https://js9.si.edu/regions/regcnts.html">regcnts help
+page</a>.  Aside from switches which control important aspects of the
+analysis, the "-j" switch (which returns the output in json format)
+might be useful in the browser environment. Some examples:
+<pre>
+    # display results in a light window
+    JS9.CountsInRegions({lightwin: true})
+
+    # return json using maximum precision in output
+    JS9.CountsInRegions({cmdswitches: "-j -G"})
+</pre>
+Results are also returned as a text string.
+
+<p>
+The regcnts code is memory (and cpu) intensive. In the desktop
+environment, this is not typically a problem, but the
+memory-constrained browser environment can present a challenge for
+large images and binary tables.  To avoid running out of memory (and
+for large images, to speed up processing considerably), the
+JS9.CountsInRegions() routine will bin the image to reduce its size,
+unless the <b>reduce</b> option is explicitly set to false. The binned
+image size can be specified by the <b>dim</b> option, defaulting to
+the global value of the image dimension options. When a file is binned
+in this manner, the returned resolution value (e.g., arcsec/pixel)
+will reflect the applied binning. Note that the number of photons
+found inside a binned and unbinned region differ slightly, due to the
+difference in the pixel boundaries in the two cases.
+
+<p>
+The <b>Counts in Regions</b> option of the <b>Analysis -> Client-side
+Analysis</b> menu runs regcnts on the source and background regions of
+the currently displayed image. The results are displayed in a light window.
+
+<p>
+Finally, note that the main <a href="https://js9.si.edu">JS9 web
+site</a> also offers regcnts as a server-based analysis program in the
+Analysis menu. The displayed source and background regions are passed
+to the server for processing. Because this version runs the desktop
+program, it runs on the original file and does no binning to reduce
+the image size (which, by the way, could lengthen the processing
+time). But the server-side task also can be useful for
+<a href="./repfile.html">large file support</a>, which involves
+displaying a small representation file associated with a much larger
+parent file stored on the server. In this case, you often want to run
+the analysis on the larger (original) file.
+
+<h5 id="JS9.RadialProfile">Generate a radial profile plot</h5>
+<p>
+<code class="api">JS9.RadialProfile(sregion, bregion, opts)</code>
+<p>
+where:
+<ul>
+<li><b>sregion</b>: annulus region, or "$sregions" to use displayed annulus
+<li><b>bregion</b>: any background region, or "$bregions" for displayed background regions
+<li><b>opts</b>:  optional object or json string containing region and plot parameters
+</ul>
+The <b>JS9.RadialProfile()</b> routine
+uses <a href="#JS9.CountsInRegions"><b>JS9.CountsInRegions()</b></a>
+to produce a radial profile plot. The source region argument should
+be an annulus region (or, when using "$sregions", the displayed source
+region should be an annulus). The background region can be any
+region(s), the same as for the counts routine.
+
+<p>
+The third argument allows you to specify options to the counts routine,
+as well as the following options for the radial profile plot:
+<ul>
+<li><b>color</b>: color of the plot line (default: "green")
+<li><b>errorbars</b>: show error bars? (default: true)
+<li><b>errorcolor</b>: color of the error bars (default: "red")
+</ul>
+Note that "-j" (json format) and "-r" (output radii) are always added to
+the cmdswitches property (and should not be overridden.) This means you can
+retrieve the json output without generating the plot simply by calling
+<a href="#JS9.CountsInRegions"><b>JS9.CountsInRegions()</b></a> directly:
+<pre>
+    JS9.CountsInRegions(sregions, bregions, {cmdswitches: "-j -r"})
+</pre>
+The return value is the id of the light window containing the plot.
+
 <h5 id="JS9.RawDataLayer">Create or modify a raw data layer</h5>
 <p>
 <code class="api">JS9.RawDataLayer(opts, func)</code>
@@ -1615,7 +1924,7 @@ where:
 <li><b>opts</b>: layer name or opts object
 <li><b>func</b>: function used to create or modify raw data
 </ul>
-Each image has raw data associated with it, i.e. the underlying
+Each image has raw data associated with it, i.e., the underlying
 astronomical image pixels that are scaled and displayed using the
 chosen scale and colormap. You can manipulate the raw data by creating
 a new <b>raw data layer</b> using <b>JS9.RawDataLayer()</b>,
@@ -1958,10 +2267,12 @@ mProjectPP from the Montage web site, which includes this explanation:
     mProjectPP is only suitable for projections which can be approximated
     by tangent-plane projections (TAN, SIN, ZEA, STG, ARC), and is therefore
     not suited for images covering large portions of the sky. Also note that
-    it does not directly support changes in coordinate system (i.e. equatorial
+    it does not directly support changes in coordinate system (i.e., equatorial
     to galactic coordinates), though these changes can be facilitated by the
     use of an alternate header.
 </pre>
+These Montage programs have been compiled into JS9 using
+<a href="https://kripken.github.io/emscripten-site/">Emscripten</a>.
 
 <p>
 The <b>wcsim</b> argument is an image id, image filename, or image
@@ -1972,6 +2283,7 @@ The <b>opts</b> object can contain the following reproject-specific properties:
 <ul>
 <li><b>rawid</b>: the id of the raw data layer to create (default: "reproject")
 <li><b>cmdswitches</b>: a string containing mProjectPP command line switches
+<li><b>shrink</b>: allow image to be made smaller to avoid memory limits
 </ul>
 The cmdswitches will be prepended to the mProjectPP command line. For example:
 <pre>
@@ -1988,11 +2300,21 @@ documentation for more information about command switches.
 
 <p>
 Reprojection is an intensive process which can take a considerable
-amount of memory and processing time. To avoid crashes, we currently
+amount of memory and processing time. To avoid memory crashes, we
 restrict the WCS image size used for reprojection to a value defined
-by JS9.REPROJDIM, currently 2300 x 2300. Even this might be too large
-for iOS devices under certain circumstances, although issues regarding
-memory are evolving rapidly.
+by JS9.REPROJDIM, currently 2048 x 2048. (For iOS devices, the limit
+is set to 1024 x 1024.) If the WCS image exceeds this size, the WCS
+(and hence the output image) will be shrunk down to the value of
+JS9.REPROJDIM x JS9.REPROJDIM, i.e., the output image will be binned to
+a smaller size so that memory limits are not exceeded. You can set
+the <b>shrink</b> property of <b>opts</b> to false if you would
+prefer that JS9 throw an error in these circumstances.
+
+<p>
+That said, reprojection of large images probably will not give very
+satisfactory results: processing will take a long time and the resulting
+image might be binned to unacceptably low resolution. We will continue
+to improve the JS9 reprojection capability as the technology evolves.
 
 <h5 id="JS9.RotateData">Rotate an image around the  WCS CRPIX point</h5>
 <p>
@@ -2034,7 +2356,7 @@ property is not specified, the default is to save all images in the display.
 <p>
 If no filename is specified, the default filename depends on the save mode.
 If mode is "display", the default filename takes the form <b>js9-[date].ses</b>,
-e.g. "js9-2018-01-09.ses". If mode is "image", the default filename is <b>[im.id].ses</b>, e.g. "casa.fits.ses".
+e.g., "js9-2018-01-09.ses". If mode is "image", the default filename is <b>[im.id].ses</b>, e.g., "casa.fits.ses".
 <p>
 Saved information (filename, scaling, colormap, contrast/bias, zoom,
 regions, catalogs, etc) is stored in a json-formatted text file. You can
@@ -2138,7 +2460,7 @@ more properties, of which the most important are:
 <li><b>y</b>: image y position
 <li><b>px</b>: physical x position
 <li><b>py</b>: physical y position
-<li><b>lcs</b>: object containing logical x, y and sys (e.g. "physical")
+<li><b>lcs</b>: object containing logical x, y and sys (e.g., "physical")
 <li><b>dx</b>: increment from current image x position
 <li><b>dy</b>: increment from current image y position
 <li><b>tags</b>: comma-separated list of tag strings or array of tag strings
@@ -2230,15 +2552,16 @@ etc.
 
 <h5 id="JS9.GetRegions">Get information about one or more regions</h5>
 <p>
-<code class="api">rarr = JS9.GetRegions(regions)</code>
+<code class="api">rarr = JS9.GetRegions(regions, opts)</code>
 <p>
 where:
 <ul>
 <li><b>regions</b>: which regions to retrieve
+<li><b>opts</b>: optional object
 </ul>
 returns:
 <ul>
-<li><b>rarr</b>: array of region objects
+<li><b>rarr</b>: array of region objects (or text if opts.format is "text")
 </ul>
 <p>
 If the <b>regions</b> argument is not specified, it defaults to "all". You
@@ -2276,22 +2599,37 @@ Each returned region object contains the following properties:
 <li><b>ra</b>: RA of center in degrees
 <li><b>dec</b>: Dec of center in degrees
 <li><b>wcsstr</b>: region string in wcs coordinates
-<li><b>wcssys</b>: wcs system (e.g. "FK5")
+<li><b>wcssys</b>: wcs system (e.g., "FK5")
 <li><b>imstr</b>: region string in image or physical coordinates
 <li><b>imsys</b>: image system ("image" or "physical")
+<li><b>lcs</b>: object containing logical x, y and sys (e.g., "physical")
 <li><b>data</b>: data property passed in options object when this shape was created.
 </ul>
-The image position can be used to access the image data returned by the
+The x, y, radii, pts, radius, width, height, r1, r2 values are all
+returned in the image coordinate system. The lcs object will contain x
+and y in logical (i.e., physical) coordinates. Moreover, if the
+imsys value is not "image" (i.e., the JS9 coordinate system is not
+explicitly set to "image"), then the lcs object also will contain
+radii, pts, radius, width, height, r1, r2 in the logical coordinate system.
+<p>
+The image position x, y can be used to access the image data returned by the
 <b>JS9.GetImageData()</b> routine:
 <pre>
     obj = JS9.GetImageData();
     xreg = JS9.GetRegions("selected")[0];
-    val = obj.data[Math.floor(xreg.y-1) * obj.width + Math.floor(xreg.x-1)];
+    val = obj.data[Math.floor(xreg.y-0.5) * obj.width + Math.floor(xreg.x-0.5)];
 </pre>
 <p>
 Note the need to integerize the x and y values: JavaScript arrays are
 objects and so floating point array indices do not get truncated
 automatically as in C. They will return null values.
+<p>
+In opts.format is set to "text", the regions are returned as a string
+in standard regions format, using semi-colon delimiters:
+<pre>
+    JS9.GetRegions("all", {format: "text"})
+    "ICRS; box(23:23:40.340, +58:47:04.059, 29.513978\", 29.513974\", 0.000000) # background,include; circle(23:23:28.069, +58:48:40.540, 14.756998\") # source,include"
+</pre>
 
 <h5 id="JS9.ChangeRegions">Change one or more regions</h5>
 <p>
@@ -2304,7 +2642,7 @@ where:
 </ul>
 Change one or more regions. 
 If the <b>regions</b> argument is not specified, it defaults to "all". You
-can specify regions using any of the following:
+can specify a region selector using any of the following:
 <ul>
 <li><b>all</b>: all regions
 <li><b>selected</b>: the selected region (or regions in a selected group)
@@ -2314,14 +2652,14 @@ can specify regions using any of the following:
 <li><b>/[regexp]/</b>: regions with a tag matching the specified regexp
 </ul>
 In this context, a regexp is a string enclosed between "/"
-slashes.e.g. "/foo[1-4]/" will match "foo1", "foo2", "foo3", "foo4";
+slashes.e.g., "/foo[1-4]/" will match "foo1", "foo2", "foo3", "foo4";
 
 <p>
 The opts object can contain the parameters 
 described in the
 <a href="#JS9.AddRegions"><b>JS9.AddRegions()</b></a>
 section. However, you cannot (yet)
-change the shape itself (e.g. from "box" to "circle"). See js9onchange.html
+change the shape itself (e.g., from "box" to "circle"). See js9onchange.html
 for examples of how to use this routine.
 
 <h5 id="JS9.CopyRegions">Copy one or more regions to another image</h5>
@@ -2337,7 +2675,7 @@ Copy regions to a different image. If <b>to</b> is "all", then the regions are
 copied to all images.
 <p>
 If the <b>regions</b> argument is not specified, it defaults to "all". You
-can specify regions using any of the following:
+can specify a region selector using any of the following:
 <ul>
 <li><b>all</b>: all regions
 <li><b>selected</b>: the selected region (or regions in a selected group)
@@ -2347,7 +2685,7 @@ can specify regions using any of the following:
 <li><b>/[regexp]/</b>: regions with a tag matching the specified regexp
 </ul>
 In this context, a regexp is a string enclosed between "/"
-slashes.e.g. "/foo[1-4]/" will match "foo1", "foo2", "foo3", "foo4";
+slashes.e.g., "/foo[1-4]/" will match "foo1", "foo2", "foo3", "foo4";
 
 <h5 id="JS9.RemoveRegions">Remove one or more regions from the region layer</h5>
 <p>
@@ -2358,7 +2696,7 @@ where:
 <li><b>regions</b>: which regions to remove
 </ul>
 If the <b>regions</b> argument is not specified, it defaults to "all". You
-can specify regions using any of the following:
+can specify a region selector using any of the following:
 <ul>
 <li><b>all</b>: all regions
 <li><b>selected</b>: the selected region (or regions in a selected group)
@@ -2368,7 +2706,7 @@ can specify regions using any of the following:
 <li><b>/[regexp]/</b>: regions with a tag matching the specified regexp
 </ul>
 In this context, a regexp is a string enclosed between "/"
-slashes.e.g. "/foo[1-4]/" will match "foo1", "foo2", "foo3", "foo4";
+slashes.e.g., "/foo[1-4]/" will match "foo1", "foo2", "foo3", "foo4";
 
 <h5 id="JS9.SaveRegions">Save regions from the current image to a file</h5>
 <p>
@@ -2394,7 +2732,7 @@ a tag value to save regions having that tag.
 
 <p>
 If the <b>layer</b> argument is not specified, it defaults to
-"regions", i.e.  the usual regions layer. You can specify a different
+"regions", i.e.,  the usual regions layer. You can specify a different
 layer, e.g., if you want to save a catalog layer as a region file
 (since
 <a href="#JS9.SaveCatalog"><b>SaveCatalog()</b></a>
@@ -2615,6 +2953,23 @@ Shape layers can be hidden from display. This could be useful, for
 example, if you have several catalogs loaded into a display and
 want to view one at a time.
 
+<h5 id="JS9.ToggleShapeLayers">Toggle display of the active shape layers</h5>
+<p>
+<code class="api">JS9.ToggleShapeLayers()</code>
+<p>
+While <a href="#JS9.ShowShapeLayer">ShowShapeLayer()</a> allows you to
+display or hide a single shape layer, this routine will toggle display
+of all active layers in the current image. An active layer is one that
+has not been turned off using the <b>Shape Layers</b> plugin or
+<a href="#JS9.ShowShapeLayer">ShowShapeLayer()</a>.
+
+<p>
+The routine remembers which layers were active at the moment when
+layers are hidden and restores only those layers in the next toggle.
+Thus, if you have two layers, "regions" and "catalog1", and the
+"catalog1" layer has previously been turned off, calling this routine
+repeatedly will turn on and off the "regions" layer only.
+
 <h5 id="JS9.ActiveShapeLayer">Make the specified shape layer the active layer</h5>
 <p>
 <code class="api">JS9.ActiveShapeLayer(layer)</code>
@@ -2764,7 +3119,7 @@ Change one or more shapes. The opts object can contain the parameters
 described in the
 <a href="#JS9.AddShapes"><b>JS9.AddShapes()</b></a>
 section. However, you cannot (yet)
-change the shape itself (e.g. from "box" to "circle").
+change the shape itself (e.g., from "box" to "circle").
 
 <h5 id="JS9.LoadCatalog">Load an astronomical catalog</h5>
 <p>
@@ -2873,8 +3228,8 @@ based on the values contained in the <b>JS9.globalOpts.catalogs.ras</b> and
 <ul>
 <li> the <b>opts.xcol</b>, if defined, specifies the RA column (similarly for opts.ycol and the Dec column)
 <li> otherwise try to match exactly the catalog header against all the array elements in JS9.globalOpts.catalogs.ras to get the RA column (same for catalogs.decs)
-<li> if no exact match, try a case-insensitive match of the catalog columns against a regular expression that begins with the first array element in JS9.globalOpts.catalogs.ras (e.g. "RA*")
-<li> if no approximate match, try a case-insensitive match of the catalog columns against a regular expression containing the first array element in JS9.globalOpts.catalogs.ras (e.g. "*RA*")
+<li> if no exact match, try a case-insensitive match of the catalog columns against a regular expression that begins with the first array element in JS9.globalOpts.catalogs.ras (e.g., "RA*")
+<li> if no approximate match, try a case-insensitive match of the catalog columns against a regular expression containing the first array element in JS9.globalOpts.catalogs.ras (e.g., "*RA*")
 </ul>
 The default global JS9.globalOpts.catalogs.ras contains:
 <pre>
@@ -3109,6 +3464,77 @@ above.
   
 <h4 id="displays">Working with Displays</h4>
 
+<h5 id="JS9.CreateMosaic">Create a Mosaic Image</h5>
+<p>
+<code class="api">JS9.CreateMosaic(which, opts)</code>
+<p>
+where:
+<ul>
+<li><b>which</b>: which images to use in the mosaic
+<li><b>opts</b>: mosaic options
+</ul>
+
+The <b>JS9.CreateMosaic()</b> creates a mosaic image from the
+specified (previously-loaded) FITS images using the
+<a href="http://montage.ipac.caltech.edu/docs/mProjectPP.html">mProjectPP</a>
+and
+<a href="http://montage.ipac.caltech.edu/docs/mAdd.html">mAdd</a>
+programs from the
+<a href="http://montage.ipac.caltech.edu/">Montage</a> software suite.
+These Montage programs have been compiled into JS9 using
+<a href="https://kripken.github.io/emscripten-site/">Emscripten</a>.
+
+<p>
+Because the browser environment is memory-limited, there are some
+restrictions on generating mosaics in JS9. The FITS files must be
+well-behaved, i.e., they must have WCS projections which can be
+approximated by tangent-plane projections (TAN, SIN, ZEA, STG, ARC).
+This precludes creating mosaics from images covering large portions of
+the sky. For large sky areas, please use Montage itself on your desktop
+to create a mosaic. A simplified js9mosaic script is included in
+the JS9 distribution or, for more control, use the Montage programs
+directly. Of course, in either case, you must install Montage.
+
+<p>
+The <b>which</b> parameter determine which images are used in the mosaic:
+<ul>
+<li><b>"current" or null</b>: the current image in this display
+<li><b>"all"</b>: all images in this display
+<li><b>im</b>: the image id or image handle of an image from any display
+<li><b>[im1, im2, ...]</b>: an array of image ids or handles from any display
+</ul>
+In general, use "current" (or null) if you have loaded a multi-extension
+FITS mosaic (e.g., a CFHT FITS file) into JS9. Use "all" if you have loaded
+several FITS files into JS9 and want to create a mosaic.
+
+<p>
+In order to keep the size of the resulting mosaic within memory
+limits, JS9 reduces the size of each image before adding them all
+together The <b>options</b> parameter determines how the reduction is
+performed:
+<ul>
+<li><b>dim</b>: size of mosaic (def: max of JS9.globalOpts.image.[xdim,ydim])
+<li><b>reduce</b>: image size reduction technique: "js9" (def) or "shrink"
+<li><b>verbose</b>: if true, processing output is sent to the javascript console
+</ul>
+The "dim" parameter is a target size: the larger of the resulting
+mosaic dimensions will be approximately this value, depending on how
+Montage processes the images. The "reduce" technique either runs
+internal JS9 image sectioning code (to produce smaller internal
+images, each of which are reprojected and added together) or runs the
+Montage mShrinkHdr code (which reprojects the full images into smaller
+files). The former seems to be faster than the latter in most
+cases. The "verbose" parameter will display output on the JavaScript
+console to let you know that the CreateMosaic() call is running properly.
+
+<p>
+The resulting mosaic will be loaded into the specified JS9 display as
+a separate image. Because the mosaic is separate from the original
+image(s), you can view each of the latter individually (or view each
+image extension of a single image using the <b>Extensions</b> plugin).
+Internal analysis can be performed on the mosaic (e.g., ImExam functions)
+but, of course, no external analysis tasks will be available.
+
 <h5 id="JS9.LookupDisplay">Lookup a JS9 display</h5>
 <p>
 <code class="api">dobj = JS9.LookupDisplay(dname, mustExist)</code>
@@ -3202,11 +3628,12 @@ the <b>File:new JS9 light window</b> menu option.
 
 <h5 id="JS9.GatherDisplay">Gather other images to this JS9 Display</h5>
 <p>
-<code class="api">JS9.GatherDisplay(dname)</code>
+<code class="api">JS9.GatherDisplay(dname, opts)</code>
 <p>
 where:
 <ul>
 <li><b>dname</b>: name of JS9 display to which the images will be gathered
+<li><b>opts</b>: optional object
 </ul>
 <p>
 This routine move all images in other displays to this display. 
@@ -3218,6 +3645,10 @@ or:
 <pre>
     JS9.GatherDisplay({display: "myJS9"});
 </pre>
+You can supply an opts object containing the properties:
+<ul>
+<li><b>images</b>: array of image handles (or indexes into JS9.images array) to gather
+</ul>
 
 <h5 id="JS9.SeparateDisplay">Separate images in this JS9 Display into new displays</h5>
 <p>
@@ -3237,8 +3668,9 @@ or:
 <pre>
     JS9.SeparateDisplay({display: "myJS9"});
 </pre>
-You also can supply an opts object containing the layout properties:
+You also can supply an opts object containing the properties:
 <ul>
+<li><b>images</b>: array of image handles (or indexes into JS9.images array) to separate
 <li><b>layout</b>: can be "horizontal", "vertical", "auto" (default: "auto")
 <li><b>leftMargin</b>: margin in pixels between horizontally separated images
 <li><b>topMargin</b>: margin in pixels between vertically separated images
@@ -3326,6 +3758,53 @@ this new window.  Dismiss both windows when you are finished.
 By default, if a colorbar is active on the page, it will be placed
 beneath the image. You can pass the <b>colorbar: false</b> option
 in the <b>opts</b> object to avoid printing the active colorbar.
+
+<h5 id="JS9.WindowPrint">Print the desktop window (<b>desktop app only</b>)</h5>
+<p>
+<code class="api">JS9.WindowPrint(opts)</code>
+<p>
+where:
+<ul>
+<li><b>opts</b>: options for print
+</ul>
+<p>
+The JS9 desktop application that utilizes 
+<a href="https://electronjs.org">Electron.js</a> has the ability to
+print the whole application window. When executed, the system print
+dialog box is displayed (unless the <b>silent</b> the option is passed in
+opts) and the window will be printed according to your print configuration.
+<p>
+The first argument allows you to specify the following options:
+<ul>
+<li><b>silent</b>: don't ask user for print settings (def: false)
+<li><b>printBackground</b>: prints the background color and image of the web page (def: true)
+<li><b>deviceName</b>: set the printer device name to use (def: "")
+</ul>
+
+
+<h5 id="JS9.WindowToPDF">Save the desktop window to a PDF file (<b>desktop app only</b>)</h5>
+<p>
+<code class="api">JS9.WindowToPDF(filename, opts)</code>
+<p>
+where:
+<ul>
+<li><b>filename</b>: PDF file name
+<li><b>opts</b>: options for save
+</ul>
+<p>
+The JS9 desktop application that utilizes 
+<a href="https://electronjs.org">Electron.js</a> has the ability to
+save the whole application window to a PDF file. The first argument specifies
+the name of the PDF file.
+<p>
+The second argument allows you to specify the following options:
+<ul>
+<li><b>marginsType</b>: the type of margins to use: 0 for default margin, 1 for no margin, and 2 for minimum margin
+<li><b>pageSize</b>: page size of the generated PDF: A3, A4, A5, Legal, Letter, Tabloid (NB: might not work with all printers)
+<li><b>printBackground</b>: prints the background color and image of the web page (def: true)
+<li><b>printSelectionOnly</b>: whether to print selection only (<b>NB: This seems to crash the application!</b>)
+<li><b>landscape</b>: true for landscape, false for portrait
+</ul>
 
 <h5 id="JS9.SaveFITS">Save image as a FITS file</h5>
 <p>
@@ -3580,7 +4059,7 @@ top-level tools.
 <li><b>showTooltips</b>: the text "showTooltips" uses the value of the
 boolean arg2 to specify whether tooltips are displayed as the mouse hovers
 over a tool.
-<li><b>[text]</b>: other text is assumed to be a JSON-formatted text
+<li><b>[text]</b>: other text is assumed to be a json-formatted text
 containing either a new tool to add to the toolbar, or an array of tools.
 <li><b>[object]</b>: an object is assumed to be new tool to add to the toolbar
 <li><b>[array]</b>: an array is assumed to be an array of new tools to add to the toolbar
@@ -3930,7 +4409,7 @@ See js9onchange.html for an example of using this callback function.
 
 <p><hr><p>
 
-<h5>Last updated: March 22, 2018</h5>
+<h5>Last updated: June 23, 2018</h5>
 </div>
 
 </body>

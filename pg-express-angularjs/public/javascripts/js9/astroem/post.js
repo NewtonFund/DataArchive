@@ -1,4 +1,4 @@
-/*global Blob, Uint8Array, FileReader, Module, FS, ccall, _malloc, _free, HEAPU8, HEAP16, HEAPU16, HEAP32, HEAPF32, HEAPF64, setValue, getValue, Pointer_stringify */
+/*global Blob, Uint8Array, FileReader, Module, FS, ccall, _malloc, _free, HEAPU8, HEAP16, HEAPU16, HEAP32, HEAPF32, HEAPF64, setValue, getValue, Pointer_stringify getCFunc assert toC stackSave stackAlloc EmterpreterAsync stackRestore */
 
 /* eslint-disable dot-notation */
 
@@ -25,8 +25,14 @@ Module["vfile"] = function(filename, buf, canOwn) {
     }
     return {path: filename, size: size};
   }
-  // one arg: return contents of an existing file
+  // one arg: return contents of an existing file as binary
   return FS.readFile(Module["rootdir"] + filename, {encoding: "binary"});
+};
+
+Module["vread"] = function(filename, mode) {
+    mode = mode || "utf8";
+    // return contents of an existing file as text or binary
+    return FS.readFile(Module["rootdir"] + filename, {encoding: mode});
 };
 
 Module["vsize"] = function(filename) {
@@ -165,6 +171,14 @@ Module["getFITSImage"] = function(fits, hdu, opts, handler) {
     var cens = [0, 0];
     var dims = [0, 0];
     var bin = 1;
+    var binMode = 0;
+    var binFactor = 0;
+    var bmode = function(x){
+	if( x && (x === 1 || x === 'a') ){
+	    return 1;
+	}
+	return 0;
+    };
     // opts is optional
     opts = opts || {};
     // make sure we have valid vfile, opened by cfitsio
@@ -246,6 +260,7 @@ Module["getFITSImage"] = function(fits, hdu, opts, handler) {
 	if( opts.table ){
 	    if( opts.table.filter ){ filter = opts.table.filter; }
 	    if( opts.table.bin ){ bin = opts.table.bin; }
+	    if( opts.table.binMode ){ binMode = bmode(opts.table.binMode); }
 	    // backward compatibity with pre-v1.12 globals
             if( opts.table.nx ){ dims[0] = opts.table.nx; }
             if( opts.table.ny ){ dims[1] = opts.table.ny; }
@@ -264,6 +279,7 @@ Module["getFITSImage"] = function(fits, hdu, opts, handler) {
 	if( opts.ycen ){ cens[1] = opts.ycen; }
 	if( opts.filter ){ filter = opts.filter; }
 	if( opts.bin ){ bin = opts.bin; }
+	if( opts.binMode ){ binMode = bmode(opts.binMode); }
 	setValue(hptr,    dims[0], "i32");
 	setValue(hptr+4,  dims[1], "i32");
 	// use center to generate image
@@ -273,6 +289,14 @@ Module["getFITSImage"] = function(fits, hdu, opts, handler) {
 	setValue(hptr+24, 0, "i32");
 	// filter an event file and generate an image
 	doerr = false;
+	// handle string bin, possibly containing explicit binMode
+	if( typeof bin === "string" ){
+	    if( bin.match(/[as]$/) ){
+		binMode = bmode(bin.slice(-1));
+	    }
+	    bin = parseInt(bin, 10);
+	}
+	bin = Math.max(1, bin || 1);
 	try{
 	    ofptr = ccall("filterTableToImage", "number",
             ["number", "string", "number", "number", "number", "number",
@@ -306,6 +330,10 @@ Module["getFITSImage"] = function(fits, hdu, opts, handler) {
 	}
 	_free(hptr);
 	if( !ctype1 || !ctype1.match(/\-\-HPX/i) ){
+	    // see if we have to average the pixels later on
+	    if( binMode > 0 && opts.bin > 1 ){
+		binFactor = opts.bin * opts.bin;
+	    }
 	    // if we don't have a HEALPix image, we clear cens and dims
 	    // to extract at center of resulting image (below)
 	    delete opts.xcen;
@@ -332,6 +360,7 @@ Module["getFITSImage"] = function(fits, hdu, opts, handler) {
     }
     // overridden by options passed in this call
     if( opts.bin ) { bin = opts.bin; }
+    if( opts.binMode ) { binMode = bmode(opts.binMode); }
     if( opts.xdim ){ dims[0] = opts.xdim; }
     if( opts.ydim ){ dims[1] = opts.ydim; }
     if( opts.xcen ){ cens[0] = opts.xcen; }
@@ -348,11 +377,19 @@ Module["getFITSImage"] = function(fits, hdu, opts, handler) {
     slice = opts.slice || "";
     // get array from image file
     doerr = false;
+    // handle string bin, possibly containing explicit binMode
+    if( typeof bin === "string" ){
+	if( bin.match(/[as]$/) ){
+	    binMode = bmode(bin.slice(-1));
+	}
+	bin = parseInt(bin, 10);
+    }
+    bin = Math.max(1, bin || 1);
     try{
 	bufptr = ccall("getImageToArray", "number",
-	["number", "number", "number", "number", "string", "number",
+	["number", "number", "number", "number", "number", "string", "number",
 	 "number", "number", "number"],
-	[ofptr, hptr, hptr+8, bin, slice, hptr+24, hptr+32, hptr+40, hptr+44]);
+	[ofptr, hptr, hptr+8, bin, binMode, slice, hptr+24, hptr+32, hptr+40, hptr+44]);
     }
     catch(e){
 	doerr = true;
@@ -396,6 +433,13 @@ Module["getFITSImage"] = function(fits, hdu, opts, handler) {
     case -64:
 	hdu.image = HEAPF64.subarray(bufptr/8, bufptr/8 + datalen);
 	break;
+    }
+    // for a binned table, we might have to average the pixel values now,
+    // since this was not done in getImageToArray()
+    if( binFactor ){
+	for(i=0; i<datalen; i++){
+	    hdu.image[i] /= binFactor;
+	}
     }
     // get section header cards as a string
     hptr = _malloc(20);
@@ -605,6 +649,143 @@ Module["cleanupFITSFile"] = function(fits, all) {
 	    Module["vunlink"](fits.vfile);
 	}
     }
+};
+
+// C calling interface for varargs.
+// Like ccall, but with a varargs array in the last argTypes argument
+// containing 2 strings [nonrepArr, repArr] where:
+//   nonrepArr: a string of non-repeating specifiers "n1n2,...nn"
+//   repArr:    a string of repeating specifiers "r1r2...rn"
+// valid specifiers are "s","i","u","d"
+//
+// example: pass a string, followed by a repeating series of double,int pairs:
+// Module.ccall_varargs("miniprintf", "null", ["string", ["s", "di"]], ["%s %f %d %s %f %d %s\n", "foo", 1.234, 2, "foo1", 3.14, -100, "goo1"])
+//
+//
+Module["ccall_varargs"] = function(ident, returnType, argTypes, args, opts) {
+    var func = getCFunc(ident);
+    var cArgs = [];
+    var stack = 0;
+    var ret, converter;
+    var i, j;
+    var maxDeclaredArgs, lastInputArg;
+    var vSpecifiers=[[], []], vSpecifiersLen;
+    var vArgs=[], vArgsLen;
+    var vStack, vStackCur;
+    var vToStack = function(item, offset, type) {
+      var vrem;
+      switch (type) {
+        case "d":
+          vrem = offset % 8;
+          if (vrem !== 0) {
+	      offset += (8 - vrem);
+	  }
+	  HEAPF64.set([item], offset/8);
+	  offset += 8;
+          break;
+	case 'f':
+	case 'i':
+	case 's':
+	case 'u':
+          vrem = offset % 4;
+          if (vrem !== 0) {
+	      offset += (4 - vrem);
+	  }
+	  HEAP32.set([item], offset/4);
+	  offset += 4;
+          break;
+      }
+      return offset;
+    };
+    assert(returnType !== 'array', 'Return type should not be "array".');
+    if (args) {
+      lastInputArg = argTypes[argTypes.length-1];
+      // look for varargs specifier in final type argument
+      if (typeof lastInputArg === "object") {
+	  // array of non-repeating args
+	  if( lastInputArg[0] ){
+	      vSpecifiers[0] = lastInputArg[0].split("");
+	  }
+	  // array of repeating args
+	  if( lastInputArg[1] ){
+	      vSpecifiers[1] = lastInputArg[1].split("");
+	  }
+          maxDeclaredArgs = argTypes.length-1;
+      } else {
+	// no varargs, process all args as declared args
+	maxDeclaredArgs = args.length;
+      }
+      // process declared args
+      for (i = 0; i < maxDeclaredArgs; i++) {
+        converter = toC[argTypes[i]];
+        if (converter) {
+          if (stack === 0) {
+	      stack = stackSave();
+	  }
+          cArgs[i] = converter(args[i]);
+        } else {
+          cArgs[i] = args[i];
+        }
+      }
+      // process varargs
+      if (vSpecifiers[0].length || vSpecifiers[1].length) {
+        // varargs go onto the stack
+	if (stack === 0) {
+	    stack = stackSave();
+	}
+        // do string conversions before creating the varargs stack
+	for (i = maxDeclaredArgs, j = 0; i < args.length; i++, j++) {
+	  if (typeof args[i] === "string") {
+            vArgs[j] = toC["string"](args[i]);
+          } else {
+            vArgs[j] = args[i];
+          }
+        }
+	// largest stack space we will need (if all varargs are doubles)
+        vStack = stackAlloc(vArgs.length * 8);
+        // current location in stack to which to write
+        vStackCur = vStack;
+	// number of varargs processed thus far
+	i = 0;
+        // write non-repeating varargs to stack space, with proper alignment
+	if (vSpecifiers[0].length) {
+	    vSpecifiersLen = vSpecifiers[0].length;
+	    for (j = 0; j < vSpecifiersLen; i++, j++) {
+		vStackCur = vToStack(vArgs[i], vStackCur, vSpecifiers[0][j]);
+            }
+	}
+        // write repeating varargs to stack space, with proper alignment
+	if (vSpecifiers[1].length) {
+	    vSpecifiersLen = vSpecifiers[1].length;
+	    vArgsLen = vArgs.length - i;
+	    for (j = 0; j < vArgsLen; i++, j++) {
+		vStackCur = vToStack(vArgs[i], vStackCur, vSpecifiers[1][j%vSpecifiersLen]);
+            }
+	}
+        // add final varargs argument: a pointer to varargs stack space
+	cArgs[maxDeclaredArgs] = vStack;
+      }
+    }
+    ret = func.apply(null, cArgs);
+    if ((!opts || !opts.async) && typeof EmterpreterAsync === 'object') {
+      assert(!EmterpreterAsync.state, 'cannot start async op with normal JS calling ccall');
+    }
+    if (opts && opts.async) {
+	assert(!returnType, 'async ccalls cannot return values');
+    }
+    if (returnType === 'string') {
+	ret = Pointer_stringify(ret);
+    }
+    if (stack !== 0) {
+      if (opts && opts.async) {
+        EmterpreterAsync.asyncFinalizers.push(function() {
+          stackRestore(stack);
+        });
+        return;
+      }
+      stackRestore(stack);
+    }
+    return ret;
 };
 
 // set the amount of max memory for a FITS image

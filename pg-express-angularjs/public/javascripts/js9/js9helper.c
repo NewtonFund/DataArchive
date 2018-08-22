@@ -1,6 +1,7 @@
 /*
- *	Copyright (c) 2012-2017 Smithsonian Astrophysical Observatory
+ *	Copyright (c) 2012-2018 Smithsonian Astrophysical Observatory
  */
+
 #include "js9helper.h"
 
 /* the Finfo stuff supports using js9helper as a server, as opposed
@@ -218,7 +219,7 @@ static Finfo FinfoNew(char *fname)
   case FTYPE_FITS:
     /* fits file can have an extension */
     f = FileRoot(fname);
-    /* set data path */
+    /* get data path */
     datapath = getenv("JS9_DATAPATH");
     /* look for path of the FITS file */
     s = Find(f, "r", NULL, datapath);
@@ -304,23 +305,29 @@ static int FinfoFree(char *fname)
 #define SLEN 33
 
 int parseSection(fitsfile *fptr, int hdutype, char *s,
-		 int *xlims, int *ylims, int *dims, double *cens, int *block){
+		 int *xlims, int *ylims, int *dims, double *cens, int *block,
+		 int *binMode){
   int got=0;
   int status=0;
   long naxes[2];
   double tx0=0, tx1=0, ty0=0, ty1=0;
   char s1[SLEN], s2[SLEN], s3[SLEN], s4[SLEN], s5[SLEN];
   char *t;
+  // init binMode to "sum"
+  *binMode = 0;
   /* look for different ways of specifying the section -- order counts! */
   /* specify limits, with and without blocking factor */
   if(sscanf(s,
-     "%32[-0-9.dDeE] : %32[-0-9.dDeE] , %32[-0-9.dDeE] : %32[-0-9.dDeE] , %32[0-9]",
+     "%32[-0-9.dDeE] : %32[-0-9.dDeE] , %32[-0-9.dDeE] : %32[-0-9.dDeE] , %32[0-9as]",
      s1, s2, s3, s4, s5) == 5){
     tx0 = atof(s1);
     tx1 = atof(s2);
     ty0 = atof(s3);
     ty1 = atof(s4);
-    *block = MAX(1, atof(s5));
+    *block = MAX(1, strtol(s5, &t, 0));
+    if( t && *t && (tolower(*t) == 'a') ){
+      *binMode = 1;
+    }
     got = 1;
   } else if(sscanf(s,
 	  "%32[-0-9.dDeE] : %32[-0-9.dDeE] , %32[-0-9.dDeE] : %32[-0-9.dDeE]",
@@ -338,7 +345,10 @@ int parseSection(fitsfile *fptr, int hdutype, char *s,
     tx1 = atof(s2);
     ty0 = tx0;
     ty1 = tx1;
-    *block = MAX(1, atof(s3));
+    *block = MAX(1, strtol(s3, &t, 0));
+    if( t && *t && (tolower(*t) == 'a') ){
+      *binMode = 1;
+    }
     got = 1;
   } else if(sscanf(s,
 	    "%32[-0-9.dDeE] : %32[-0-9.dDeE]",
@@ -351,13 +361,16 @@ int parseSection(fitsfile *fptr, int hdutype, char *s,
     got = 1;
   /* specify dimensions and center, with and without blocking factor */
   } else if(sscanf(s,
-	    "%32[0-9.dDeE] @ %32[-0-9.dDeE] , %32[0-9.dDeE] @ %32[-0-9.dDeE] , %32[0-9]",
+	    "%32[0-9.dDeE] @ %32[-0-9.dDeE] , %32[0-9.dDeE] @ %32[-0-9.dDeE] , %32[0-9as]",
 	    s1, s2, s3, s4, s5) == 5){
     dims[0] = atof(s1);
     cens[0] = atof(s2);
     dims[1] = atof(s3);
     cens[1] = atof(s4);
     *block = MAX(1, strtol(s5, &t, 0));
+    if( t && *t && (tolower(*t) == 'a') ){
+      *binMode = 1;
+    }
     got = 2;
 
   } else if(sscanf(s,
@@ -370,13 +383,16 @@ int parseSection(fitsfile *fptr, int hdutype, char *s,
     *block = 1;
     got = 2;
   } else if(sscanf(s,
-	    "%32[0-9.dDeE] @ %32[-0-9.dDeE] , %32[0-9]",
+	    "%32[0-9.dDeE] @ %32[-0-9.dDeE] , %32[0-9as]",
 	    s1, s2, s3) == 3){
     dims[0] = atof(s1);
     cens[0] = atof(s2);
     dims[1] = dims[0];
     cens[1] = cens[0];
     *block = MAX(1, strtol(s3, &t, 0));
+    if( t && *t && (tolower(*t) == 'a') ){
+      *binMode = 1;
+    }
     got = 2;
   } else if(sscanf(s,
 	    "%32[0-9.dDeE] @ %32[-0-9.dDeE]",
@@ -389,13 +405,16 @@ int parseSection(fitsfile *fptr, int hdutype, char *s,
     got = 2;
   /* specify dimensions, with and without blocking factor */
   } else if(sscanf(s,
-	    "%32[0-9.dDeE] , %32[-0-9.dDeE] , %32[-0-9.dDeE]",
+	    "%32[0-9.dDeE] , %32[-0-9.dDeE] , %32[0-9as]",
 	    s1, s2, s3) == 3){
     dims[0] = atof(s1);
     cens[0] = 0;
     dims[1] = atof(s2);
     cens[1] = 0;
     *block = MAX(1, strtol(s3, &t, 0));
+    if( t && *t && (tolower(*t) == 'a') ){
+      *binMode = 1;
+    }
     got = 3;
   } else if(sscanf(s,
 	    "%32[0-9.dDeE] , %32[-0-9.dDeE]",
@@ -454,8 +473,8 @@ int parseSection(fitsfile *fptr, int hdutype, char *s,
 
 /* copy image section from input to putput, with binning */
 int copyImageSection(fitsfile *ifptr, fitsfile *ofptr,
-		     int *dims, double *cens, int bin, char *slice,
-		     int *status)
+		     int *dims, double *cens, int bin, int binMode,
+		     char *slice, int *status)
 {
   int i;
   void *buf;
@@ -469,8 +488,8 @@ int copyImageSection(fitsfile *ifptr, fitsfile *ofptr,
   long naxes[2];
   long fpixel[2] = {1,1};
   float amin[2];
-  buf = getImageToArray(ifptr, dims, cens, bin, slice, start, end, &bitpix,
-			status);
+  buf = getImageToArray(ifptr, dims, cens, bin, binMode, slice, start, end,
+			&bitpix, status);
   if( !buf || *status ){
     fits_get_errstatus(*status, tbuf);
     fprintf(stderr, "ERROR: could not create section for output image: %s\n",
@@ -546,9 +565,13 @@ int copyImageSection(fitsfile *ifptr, fitsfile *ofptr,
 /* process this command */
 static int ProcessCmd(char *cmd, char **args, int narg, int node, int tty)
 {
+  char *s=NULL;
+  char *t=NULL;
+  char *jdir=NULL;
   char tbuf[SZ_LINE];
   Finfo finfo, tfinfo;
 #if HAVE_CFITSIO
+  int i, j, binMode;
   int xlims[2], ylims[2], bin, got, hdutype, hdunum, ncard;
   int status=0, tstatus=0;
   int dims[2];
@@ -560,6 +583,7 @@ static int ProcessCmd(char *cmd, char **args, int narg, int node, int tty)
   char *filter=NULL;
   char *slice=NULL;
   char *cardstr=NULL;
+  char *ncardstr=NULL;
   void *tcens=NULL;
   fitsfile *ifptr, *ofptr, *tfptr;
 #endif
@@ -597,9 +621,21 @@ static int ProcessCmd(char *cmd, char **args, int narg, int node, int tty)
       /* make it current */
       FinfoSetCurrent(finfo);
       if( node ) fprintf(stdout, "image\r");
+      s = finfo->fitsfile ? finfo->fitsfile : "?";
+      /* get install directory (which we want to hide) */
+      jdir = getenv("JS9_DIR");
+      // hide install directory with environment variable
+      if( jdir && *jdir ){
+	t = strstr(s, jdir);
+	if( t && *t && !strcmp(t, s) ){
+	  strncpy(tbuf, "${JS9_DIR}", SZ_LINE-1);
+	  strncat(tbuf, &s[strlen(jdir)], SZ_LINE-1);
+	  xfree(s);
+	  s = tbuf;
+	}
+      }
       /* return the FITS file name, if possible */
-      fprintf(stdout, "%s %s\n",
-	      finfo->fname, finfo->fitsfile ? finfo->fitsfile : "?");
+      fprintf(stdout, "%s %s\n", finfo->fname, s);
       fflush(stdout);
       return 0;
     } else if( !strcmp(cmd, "image_") ){
@@ -641,7 +677,8 @@ static int ProcessCmd(char *cmd, char **args, int narg, int node, int tty)
 	slice = args[3];
       }
       if( !section || !(got = parseSection(ifptr, hdutype, section,
-					   xlims, ylims, dims, cens, &bin)) ){
+					   xlims, ylims, dims, cens,
+					   &bin, &binMode)) ){
 	fprintf(stderr,
 		"ERROR: can't parse section for '%s' [%s]\n",
 		finfo->fitsfile, (args && args[0]) ? args[0] : "NONE");
@@ -659,7 +696,8 @@ static int ProcessCmd(char *cmd, char **args, int narg, int node, int tty)
       switch(hdutype){
       case IMAGE_HDU:
 	/* image: let cfitsio make a section */
-	if( copyImageSection(ifptr, ofptr, dims, cens, bin, slice, &status) ){
+	if( copyImageSection(ifptr, ofptr, dims, cens, bin, binMode,
+			     slice, &status) ){
 	  fits_get_errstatus(status, tbuf);
 	  fprintf(stderr,
 		  "ERROR: can't copy image section for '%s' [%s]\n",
@@ -686,7 +724,8 @@ static int ProcessCmd(char *cmd, char **args, int narg, int node, int tty)
 	status = 0;
 
 	/* copy section to new image */
-	if( copyImageSection(tfptr, ofptr, dims, tcens, bin, NULL, &status) ){
+	if( copyImageSection(tfptr, ofptr, dims, tcens, bin, binMode,
+			     NULL, &status) ){
 	  fits_get_errstatus(status, tbuf);
 	  fprintf(stderr,
 		  "ERROR: can't copy image section for '%s' [%s]\n",
@@ -705,6 +744,7 @@ static int ProcessCmd(char *cmd, char **args, int narg, int node, int tty)
 	closeFITSFile(ofptr, &status);
 	return 1;
       }
+#ifndef __EMSCRIPTEN__
       /* return a json object with info about original data */
       fprintf(stdout, "{\"file\":\"%s\"", finfo->fitsfile);
       fprintf(stdout, ",\"type\":%d", hdutype);
@@ -718,14 +758,27 @@ static int ProcessCmd(char *cmd, char **args, int narg, int node, int tty)
       fprintf(stdout, ",\"hdus\":");
       _listhdu(finfo->fitsfile, NULL);
       tstatus=0;
+      // get header cards as a string
       getHeaderToString(ifptr, &cardstr, &ncard, &tstatus);
+      // clean header cards for json
+      ncardstr = calloc(sizeof(char), strlen(cardstr)*2+1);
+      for(i=0, j=0; i<(int)strlen(cardstr); i++, j++){
+	if( cardstr[i] == '"' ){
+	  ncardstr[j++] = '\\';
+	}
+	ncardstr[j] = cardstr[i];
+      }
+      if( ncardstr ){
+	fprintf(stdout, ",\"ncard\":%d", ncard);
+	fprintf(stdout, ",\"cardstr\":\"%s\"", ncardstr);
+	free(ncardstr);
+      }
       if( cardstr ){
-	fprintf(stdout, ",\"ncard\":%d",ncard);
-	fprintf(stdout, ",\"cardstr\":\"%s\"",cardstr);
 	free(cardstr);
       }
       fprintf(stdout, "}\n");
       fflush(stdout);
+#endif
       tstatus=0;
       closeFITSFile(ifptr, &tstatus);
       tstatus=0;
@@ -804,7 +857,11 @@ static int ProcessCmd(char *cmd, char **args, int narg, int node, int tty)
   return 2;
 }
 
+#ifdef __EMSCRIPTEN__
+int js9helper(int argc, char **argv)
+#else
 int main(int argc, char **argv)
+#endif
 {
   int c;
   int args;
@@ -821,6 +878,8 @@ int main(int argc, char **argv)
   /* we want the args in the same order in which they arrived, and
      gnu getopt sometimes changes things without this */
   putenv("POSIXLY_CORRECT=true");
+  /* parse args from beginning */
+  optind = 1;
   /* process switch arguments */
   while ((c = getopt(argc, argv, "i:v")) != -1){
     switch(c){

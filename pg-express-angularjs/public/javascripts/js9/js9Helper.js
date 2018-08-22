@@ -6,15 +6,12 @@
  * Organization: Harvard Smithsonian Center for Astrophysics, Cambridge MA
  * Contact: saord@cfa.harvard.edu
  *
- * Copyright (c) 2012 - 2017 Smithsonian Astrophysical Observatory
+ * Copyright (c) 2012 - 2018 Smithsonian Astrophysical Observatory
  *
- * Utilizes: socket.io, node-uuid
  *
  */
 
 /*jslint bitwise: true, plusplus: true, vars: true, white: true, continue: true, unparam: true, regexp: true, browser: true, devel: true, node: true, stupid: true */
-
-/*jshint smarttabs:true */
 
 /* global require process module __dirname Buffer */
 
@@ -29,19 +26,24 @@ var http = require('http'),
     qs = require('querystring'),
     cproc  = require("child_process"),
     fs     = require("fs"),
-    uuid   = require('node-uuid'),
+    uuidv4   = require('uuid/v4'),
     rmdir = require('rimraf');
 
 // internal variables
-var app, io, secure, envs;
-var cdir = __dirname;
-var prefsfile  = path.join(cdir, "js9Prefs.json");
-var securefile = path.join(cdir, "js9Secure.json");
+var i, app, io, secure, envs;
+var myProg = process.argv[0].split("/").reverse()[0];
+var myArgs = process.argv.slice(2);
+var installDir = __dirname;
+var currentDir = process.cwd();
+var prefsfile  = path.join(installDir, "js9Prefs.json");
+var securefile = path.join(installDir, "js9Secure.json");
 var fits2png = {};
 var fits2fits = {};
 var quotacheck = {};
 var analysis = {str:[], pkgs:[]};
 var plugins = [];
+var js9Queue = {};
+var rmQueue = {};
 
 // secure options ... change as necessary in securefile
 var secureOpts = {
@@ -59,10 +61,13 @@ var globalOpts = {
     analysisPlugins:  "analysis-plugins",
     analysisWrappers: "analysis-wrappers",
     helperPlugins:    "helper-plugins",
+    dataPathModify:   true,
+    fileTranslate:    [],          // file translation, e.g. ["/notebooks/",""]
     maxBinaryBuffer:  150*1024000, // exec buffer: good for 4096^2 64-bit image
     maxTextBuffer:    5*1024000,   // exec buffer: good for text
     textEncoding:     "ascii",     // encoding for returned stdout from exec
     rmWorkDir:        true,        // remove workdir on disconnect?
+    rmWorkDelay:      15000,       // delay before removing workdir
     remoteMsgs:       1 // 0 => none, 1 => samehost, 2 => all
 };
 // globalOpts that might need to have paths relative to __dirname
@@ -289,33 +294,38 @@ var loadSecurePreferences = function(securefile){
 };
 
 // load preference file, if possible
-var loadPreferences = function(prefsfile){
+var loadPreferences = function(prefs){
     var s, obj, opt, otype, jtype;
-    if( fs.existsSync(prefsfile) ){
-	s = fs.readFileSync(prefsfile, "utf-8");
-	if( s ){
-	    try{ obj = JSON.parse(s.toString()); }
-	    catch(e){ cerr("can't parse: ", prefsfile, e); }
-	    // look for globalOpts and merge
-	    if( obj && obj.globalOpts ){
-		for( opt in obj.globalOpts ){
-		    if( obj.globalOpts.hasOwnProperty(opt) ){
-			otype = typeof obj.globalOpts[opt];
-			jtype = typeof globalOpts[opt];
-			if( (jtype === otype) || (jtype === "undefined") ){
-			    switch(otype){
-			    case "number":
-				globalOpts[opt] = obj.globalOpts[opt];
-				break;
-			    case "boolean":
-				globalOpts[opt] = obj.globalOpts[opt];
-				break;
-			    case "string":
-				globalOpts[opt] = obj.globalOpts[opt];
-				break;
-			    default:
-				break;
-			    }
+    if( fs.existsSync(prefs) ){
+	s = fs.readFileSync(prefs, "utf-8");
+    } else if( typeof prefs === "string" ){
+	s = '{"globalOpts": ' + prefs + "}";
+    }
+    if( s ){
+	try{ obj = JSON.parse(s.toString()); }
+	catch(e){ cerr("can't parse: ", prefsfile, e); }
+	// look for globalOpts and merge
+	if( obj && obj.globalOpts ){
+	    for( opt in obj.globalOpts ){
+		if( obj.globalOpts.hasOwnProperty(opt) ){
+		    otype = typeof obj.globalOpts[opt];
+		    jtype = typeof globalOpts[opt];
+		    if( (jtype === otype) || (jtype === "undefined") ){
+			switch(otype){
+			case "number":
+			    globalOpts[opt] = obj.globalOpts[opt];
+			    break;
+			case "boolean":
+			    globalOpts[opt] = obj.globalOpts[opt];
+			    break;
+			case "string":
+			    globalOpts[opt] = obj.globalOpts[opt];
+			    break;
+			case "object":
+			    globalOpts[opt] = obj.globalOpts[opt];
+			    break;
+			default:
+			    break;
 			}
 		    }
 		}
@@ -325,7 +335,7 @@ var loadPreferences = function(prefsfile){
 	globalRelatives.forEach( function(s){
 	    var file = globalOpts[s];
 	    if( file && !path.isAbsolute(file) ){
-		globalOpts[s] = path.join(cdir, file);
+		globalOpts[s] = path.join(installDir, file);
 	    }
 	});
     }
@@ -468,21 +478,39 @@ var parseArgs = function(argstr){
 
 // get data path
 var getDataPath = function(s){
-    var dpath;
-    if( s ){
-	dpath = envClean(s);
-    } else if( globalOpts.dataPath ){
-	dpath = envClean(globalOpts.dataPath);
-    } else {
-	dpath = "";
+    var i, t, narr;
+    var arr = [];
+    var dataPath="";
+    // always use the global dataPath set by the site
+    if( globalOpts.dataPath ){
+	dataPath = envClean(globalOpts.dataPath);
+	arr = dataPath.split(":");
     }
-    dpath += ":" + cdir;
-    return dpath;
+    // add user dataPath, if permitted
+    if( s && globalOpts.dataPathModify ){
+	t = envClean(s);
+	narr = t.split(":");
+	for(i=0; i<narr.length; i++){
+	    if( !arr.includes(narr[i]) ){
+		if( dataPath ){
+		    dataPath += ":";
+		}
+		dataPath += narr[i];
+	    }
+	}
+    }
+    if( dataPath ){
+	dataPath += ":";
+    }
+    // always add js9Helper install directory
+    dataPath += installDir;
+    return dataPath;
 };
 
 // see if a file exists in the dataPath
 var getFilePath = function(file, dataPath, myenv){
-    var i, s, s1, s2, froot1, froot2, fext, parr;
+    var i, s, s1, froot1, fext, parr;
+    var from, to;
     // eslint-disable-next-line no-unused-vars
     var repl = function(m, t, o){
 	if( myenv && myenv[t] ){
@@ -490,39 +518,50 @@ var getFilePath = function(file, dataPath, myenv){
 	}
 	return m;
     };
+    var hide = function(s){
+	var rexp = new RegExp("^" + installDir);
+	return s.replace(rexp, "${JS9_DIR}");
+    };
     // sanity check
     if( !file ){
 	return;
     }
+    // translate filename, if necessary
+    if( globalOpts.fileTranslate                &&
+	Array.isArray(globalOpts.fileTranslate) &&
+	globalOpts.fileTranslate[0]             ){
+	from = new RegExp(globalOpts.fileTranslate[0]);
+	to = globalOpts.fileTranslate[1] || "";
+	file = file.replace(from, to);
+    }
     // look for and remove the extension
     froot1 = file.replace(/\[.*]$/,"");
-    // root without any path
-    froot2 = froot1.split("/").reverse()[0];
     s = file.match(/\[.*]$/,"");
     if( s ){
 	fext = s[0];
     } else {
 	fext = "";
     }
+    parr = dataPath.split(":");
+    // absolute paths get tested on their own
     if( path.isAbsolute(froot1) ){
-	parr = [""];
-    } else {
-	parr = dataPath.split(":");
+	parr.unshift("");
     }
-    // replace environment variables in path, if possible
+    // and everything gets tested relative to the current directory
+    parr.unshift(".");
+    // check is file is in any of the directories in the path
     for(i=0; i<parr.length; i++){
+	// replace environment variables in path, if possible
 	s = parr[i].replace(/\${?([a-zA-Z][a-zA-Z0-9_()]+)}?/g, repl);
 	// make up pathnames to check
 	s1 = path.join(s, froot1);
-	s2 = path.join(s, froot2);
 	if( fs.existsSync(s1) ){
+	    if( !s1.match(/\//) ){
+		s1 = currentDir + "/" + s1;
+	    }
 	    // found the file add extension to full path
 	    s1 += fext;
-	    return s1;
-	} else if( (s1 !== s2) && fs.existsSync(s2) ){
-	    // found the file add extension to full path
-	    s2 += fext;
-	    return s2;
+	    return hide(s1);
 	}
     }
     return;
@@ -559,6 +598,10 @@ var execCmd = function(io, socket, obj, cbfunc) {
 	       encoding: globalOpts.textEncoding};
     // sanity check
     if( !obj.cmd || !socket.js9 ){
+	if( cbfunc ){
+	    res.stderr = "js9 helper is unavailable";
+	    cbfunc(res);
+	}
 	return;
     }
     // stdin processing
@@ -582,7 +625,7 @@ var execCmd = function(io, socket, obj, cbfunc) {
     // host ip
     myenv.JS9_HOST = envClean(myip);
     // JS9 base dir
-    myenv.JS9_DIR = cdir;
+    myenv.JS9_DIR = installDir;
     // JS9 unique page id
     myenv.JS9_PAGEID = 	socket.js9.pageid;
     // js9 cookie in the sending browser
@@ -606,7 +649,7 @@ var execCmd = function(io, socket, obj, cbfunc) {
     argstr = obj.cmd || "";
     // expand directory macros
     argstr = argstr
-	.replace(/\$\{?JS9_DIR\}?/, cdir)
+	.replace(/\$\{?JS9_DIR\}?/, installDir)
 	.replace(/\$\{?JS9_WORKDIR\}?/, (socket.js9.rworkDir || ""));
     // split arguments on spaces, respecting quotes
     args = parseArgs(argstr);
@@ -639,7 +682,7 @@ var execCmd = function(io, socket, obj, cbfunc) {
 	cmd = globalOpts.analysisWrappers + "/" + args[0];
 	// make path absolute in case we change directories
 	if( cmd.charAt(0) !== "/" ){
-	    cmd = cdir + "/" + cmd;
+	    cmd = installDir + "/" + cmd;
 	}
     }
     // log what we are about to do
@@ -792,15 +835,23 @@ var socketioHandler = function(socket) {
     // returns: N/A
     // for other implementations, this is needed if you want to:
     //   show disconnects in the log
-    socket.on("disconnect", function() {
+    socket.on("disconnect", function(reason) {
 	var myhost = getHost(io, socket);
 	// only process disconnect for displays (not js9 msgs or workers)
 	if( socket.js9 && socket.js9.displays && !socket.js9worker ){
-            clog("disconnect: %s (%s)",	myhost, socket.js9.displays);
-	    // clean up working directory
+            clog("disconnect: %s (%s) [%s]",
+		 myhost, socket.js9.displays, reason);
+	    // clean up working directory, unless we reconnected
 	    // use sync to prevent Electron.js from exiting too soon
 	    if( socket.js9.aworkDir && globalOpts.rmWorkDir ){
-		rmdir.sync(socket.js9.aworkDir);
+		// timeout allows page to reconnect before we delete
+		rmQueue[socket.js9.pageid] = socket.js9.aworkDir;
+		setTimeout(function(){
+		    if( rmQueue[socket.js9.pageid] ){
+			rmdir.sync(socket.js9.aworkDir);
+			delete rmQueue[socket.js9.pageid];
+		    }
+		}, globalOpts.rmWorkDelay);
 	    }
 	}
     });
@@ -814,14 +865,23 @@ var socketioHandler = function(socket) {
 	if( !obj ){return;}
 	socket.js9 = {};
 	socket.js9.displays = obj.displays;
-	socket.js9.pageid = uuid.v4();
+	if( obj.pageid ){
+	    // reconnect: use old pageid
+	    socket.js9.pageid = obj.pageid;
+	    // remove from queue, if necessary
+	    delete rmQueue[socket.js9.pageid];
+	} else {
+	    // new page: use new pageid
+	    socket.js9.pageid = uuidv4();
+	}
+	js9Queue[socket.js9.pageid] = socket.js9;
 	socket.js9.aworkDir = null;
 	socket.js9.rworkDir = null;
 	// create top-level workDir, if necessary
 	// Electron.js might not be in the default location
 	basedir = globalOpts.workDir;
 	if( !path.isAbsolute(basedir) ){
-	    basedir = path.join(cdir, basedir);
+	    basedir = path.join(installDir, basedir);
 	}
 	// futz with the case of a link pointing nowhere
 	try { aworkdir = fs.readlinkSync(basedir); }
@@ -836,18 +896,20 @@ var socketioHandler = function(socket) {
 	    socket.js9.aworkDir = aworkdir + "/" + socket.js9.pageid;
 	    // relative path of workdir
 	    socket.js9.rworkDir = globalOpts.workDir + "/" + socket.js9.pageid;
-	    try{ fs.mkdirSync(socket.js9.aworkDir, parseInt('0755',8)); }
-	    catch(e){
-		cerr("can't create page workDir: ", e.message);
-		socket.js9.aworkDir = null;
-		socket.js9.rworkDir = null;
+	    if( !fs.existsSync(socket.js9.aworkDir) ){
+		try{ fs.mkdirSync(socket.js9.aworkDir, parseInt('0755',8)); }
+		catch(e){
+		    cerr("can't create page workDir: ", e.message);
+		    socket.js9.aworkDir = null;
+		    socket.js9.rworkDir = null;
+		}
 	    }
 	}
 	// can we find the helper program?
 	jpath = !!getFilePath(globalOpts.cmd, process.env.PATH, process.env);
 	// log results
         clog("connect: %s (%s)", myhost, socket.js9.displays);
-	if( cbfunc ){ cbfunc({pageid: socket.js9.pageid, js9helper: jpath}); }
+	if( cbfunc ){ cbfunc({pageid: socket.js9.pageid, js9helper: jpath, dataPathModify: globalOpts.dataPathModify}); }
     });
     // on display: add a display to the display list
     // returns: unique page id (not currently used)
@@ -938,6 +1000,9 @@ var socketioHandler = function(socket) {
 		   encoding: globalOpts.textEncoding};
 	// sanity checks
 	if( !fits2fits[0] || !fits2fits[0].action || !obj ){
+	    // let client decide whether to use default file or throw error
+	    res.stdout = "ERROR: no fits2fits action defined";
+	    cbfunc(res);
 	    return;
 	}
 	// environment, and datapath (for finding data files)
@@ -947,7 +1012,8 @@ var socketioHandler = function(socket) {
 	if( !s ){
 	    // did not find file, let js9 take care of it
 	    if( cbfunc ){
-		res.stdout = obj.fits;
+		// let client decide whether to use default file or throw error
+		res.stdout = "ERROR: could not find FITS file in data path";
 		cbfunc(res);
 	    }
 	    return;
@@ -963,9 +1029,7 @@ var socketioHandler = function(socket) {
 		return;
 	    }
 	}
-	if( (obj.fits.charAt(0) !== "/") && !obj.fits.match(/^\${JS9_DIR}/) ){
-	    obj.fits = "${JS9_DIR}/" + obj.fits;
-	}
+	obj.fits = s;
 	// make up fits2fits command string from defined fits2fits action
 	obj.cmd = fits2fits[0].action;
         if( obj.parent ){
@@ -1163,7 +1227,7 @@ var httpHandler = function(req, res){
 
 // add runtime directory to PATH
 if( process.env.PATH ){
-    process.env.PATH += (":" + cdir);
+    process.env.PATH += (":" + installDir);
 }
 // save as json
 envs = JSON.stringify(process.env);
@@ -1173,6 +1237,15 @@ secure = loadSecurePreferences(securefile);
 
 // load preference file
 loadPreferences(prefsfile);
+
+// override preferences with json on the command line
+// but only if we are in a basic node program (i.e not Electron)
+if( (myProg === "node" || myProg === "nodejs") &&
+    myArgs && myArgs.length > 0                ){
+    for(i=0; i<myArgs.length; i++){
+	loadPreferences(myArgs[i]);
+    }
+}
 
 // load analysis plugins
 loadAnalysisTasks(globalOpts.analysisPlugins);
@@ -1199,6 +1272,9 @@ io.on("connection", socketioHandler);
 // start listening on the helper port
 app.listen(globalOpts.helperPort, globalOpts.helperHost);
 
+// signal that we are listening for connections
+clog("helper: %s %s", globalOpts.helperHost, globalOpts.helperPort);
+
 // an example of adding an in-line messsage to the analysis task list
 if( process.env.NODEJS_FOO === "analysis" ){
     // add foo to the list of analysis tasks sent to JS9
@@ -1209,9 +1285,33 @@ if( process.env.NODEJS_FOO === "analysis" ){
 		     keys: ["filename", "regions", "id"]});
 }
 
+// re-init analysis tasks and plugins on USR2
+// eslint-disable-next-line no-unused-vars
+process.on('SIGUSR2', function(signal){
+    analysis = {str:[], pkgs:[]};
+    loadAnalysisTasks(globalOpts.analysisPlugins);
+    plugins = [];
+    loadHelperPlugins(globalOpts.helperPlugins);
+});
+
 // last ditch attempt to keep the server up
 process.on("uncaughtException", function(e){
     cerr("uncaughtException: %s [%s]", e, e.stack || e.stacktrace || "");
+});
+
+// clean up on exit
+process.on("exit", function(){
+    var i, client;
+    var clients = getClients(io);
+    // remove client work dirs, if necessary
+    if( globalOpts.rmWorkDir ){
+	for(i=0; i<clients.length; i++){
+	    client = clients[i];
+	    if( client && client.js9 && client.js9.aworkDir ){
+		rmdir.sync(client.js9.aworkDir);
+	    }
+	}
+    }
 });
 
 // in case we are called as a module

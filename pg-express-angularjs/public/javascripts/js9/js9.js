@@ -12,18 +12,21 @@
 
 /*global JS9Prefs, JS9Inline, $, jQuery, Event, fabric, io, CanvasRenderingContext2D, sprintf, Blob, ArrayBuffer, Uint8Array, Uint16Array, Int8Array, Int16Array, Int32Array, Float32Array, Float64Array, DataView, FileReader, Fitsy, Astroem, dhtmlwindow, saveAs, Spinner, ResizeSensor, Jupyter, gaussBlur, ImageFilters, Plotly */
 
-// define Escripten Module so we can pass properties (e.g. wasmBinary)
-// eslint-disable-next-line no-unused-vars
-var Module = {};
+// these are the objects created in this module
+var JS9, Module;
 
-// JS9 module
-var JS9 = (function(){
+// create Emscripten Module object, if necessary
+// (so we can pass properties, e.g. wasmBinary, in js9prefs.js and during init)
+if( typeof Module !== "object" ){ Module = {}; }
+
+// generate JS9 module
+JS9 = (function(){
 "use strict";
 
 // module header
 var JS9 = {};
 JS9.NAME = "JS9";		// The name of this namespace
-JS9.VERSION = "2.0.2";		// The version of this namespace
+JS9.VERSION = "2.1";		// The version of this namespace
 JS9.COPYRIGHT = "Copyright (c) 2012-2018 Smithsonian Institution";
 
 // internal defaults (not usually changed by users)
@@ -57,7 +60,7 @@ JS9.RESIZEDIST = 20;		// size of rectangle defining resize handle
 JS9.RESIZEFUDGE = 5;            // fudge for webkit resize problems
 JS9.RAWID0 = "raw0";		// default raw id
 JS9.RAWIDX = "alt";		// default "alternate" raw id
-JS9.REPROJDIM = 2300;		// max dimension for reprojection
+JS9.REPROJDIM = 2048;		// max dim for reproj before we shrink image
 JS9.IDFMT = "  (%s)";           // format for light window id
 JS9.MINZOOM = 0.125;		// min zoom using scrool wheel
 JS9.MAXZOOM = 16.0;		// max zoom using scrool wheel
@@ -98,28 +101,35 @@ JS9.PIXEL_RATIO = (function(){
 JS9.globalOpts = {
     helperType: "none",		// one of: sock.io, get, post, none
     helperPort: 2718,		// default port for node.js helper
+    requireHelper: false,       // throw error if helper is not available?
+    requireFits2Fits: false,    // throw error if fits2fits can't be run?
     useWasm: true,		// use WebAssembly if available?
     winType: "light",		// plugin window: "light" or "new"
     rgb: {active: false,	// RGB mode
 	  rim: null,
 	  gim: null,
 	  bim: null},
-    defcolor: "#00FF00",	// graphics color when all else fails
+    defcolor: "#C7D401",	// graphics color when all else fails
     pngisfits: true,		// are PNGs really PNG representation files?
     fits2fits: "never",		// convert to repfile? always|never|size>x Mb
     fits2png: false,		// convert FITS to PNG rep files? true|false
+    prependJS9Dir: true,        // prepend $JS9_DIR to relative fitsFile paths?
+    dataDir: null,              // path to FITS data (def: use incoming path)
     alerts: true,		// set to false to turn off alerts
     internalValPos: true,	// a fancy info plugin can turns this off
     internalContrastBias: true,	// a fancy colorbar plugin can turns this off
     containContrastBias: false, // contrast/bias only when mouse is in display?
-    htimeout: 5000,		// connection timeout for the helper connect
-    lhtimeout: 1000,		// connection timeout for local helper connect
-    ehtimeout: 1000,		// connection timeout for Electron connect
+    wcsCrosshair: false,	// enable wcs crosshair matching?
+    magnifierRegions: true,	// display regions in magnifier?
+    htimeout:  10000,		// connection timeout for the helper connect
+    lhtimeout: 10000,		// connection timeout for local helper connect
+    ehtimeout: 5000,		// connection timeout for Electron connect
     ehretries: 10,		// connection retries Electron connect
     xtimeout: 180000,		// connection timeout for fetch data requests
     extlist: "EVENTS STDEVT",	// list of binary table extensions
     table: {xdim: 2048, ydim: 2048, bin: 1},// image section size to extract from table
     image: {xdim: 2048, ydim: 2048, bin: 1},// image section size (0 for unlimited)
+    binMode: "s",             // "s" (sum) or "a" (average) pixels when binning
     clearImageMemory: "never",  // rm vfile: always|never|auto|noExt|noCube|size>x Mb
     helperProtocol: location.protocol, // http: or https:
     maxMemory: 750000000,	// max heap memory to allocate for a fits image
@@ -138,13 +148,25 @@ JS9.globalOpts = {
     cloneNewDisplay: true,      // clone size of display, when possible?
     regionConfigSize: "medium", // "small", "medium"
     refreshDragDrop: true,	// refresh on drag/drag and open file?
+    reduceMosaic: "js9",        // "js9" or "shrink" ("js9" seems to be faster)
+    reduceRegcnts: true,        // reduce image when doing counts in regions?
+    copyWcsPosFormat: "$ra $dec $sys", // format for copy wcs pos to clipboard
     mouseActions: ["display value/position", "change contrast/bias", "pan the image"],// 0,1,2 mousepress
     touchActions: ["display value/position", "change contrast/bias", "pan the image"],// 1,2,3 fingers
     keyboardActions: {
 	b: "toggle selected region: source/background",
+	c: "toggle crosshair",
 	e: "toggle selected region: include/exclude",
-	f: "display full image",
-	r: "refresh image",
+	i: "refresh image",
+	I: "display full image",
+	K: "toggle keyboard actions plugin",
+	l: "toggle active shape layers",
+	M: "toggle mouse/touch plugin",
+        p: "paste regions from local clipboard",
+	P: "toggle preferences plugin",
+	r: "copy selected region to clipboard",
+	R: "copy all regions to clipboard",
+	S: "toggle shape layers plugin",
         "/": "copy wcs position to clipboard",
         "?": "copy value and position to clipboard",
 	"0": "reset zoom",
@@ -163,9 +185,12 @@ JS9.globalOpts = {
     mousetouchZoom: false,	// use mouse wheel, pinch to zoom?
     toolbarTooltips: false,     // display tooltips on toolbar?
     centerDivs: ["JS9Menubar"], // divs that take part in JS9.Display.center()
+    resizeDivs: ["JS9Menubar", "JS9Colorbar", "JS9Toolbar"], // divs that take part in JS9.Display.resize()
     pinchWait: 8,		// number of events to wait before testing pinch
     pinchThresh: 6,		// threshold for pinch test
+    xeqPlugins: true,		// execute plugin callbacks?
     extendedPlugins: true,	// enable extended plugin support?
+    intensivePlugins: false,	// enable intensive plugin support?
     corsProxy:   "https://js9.si.edu/cgi-bin/CORS-proxy.cgi",   // CORS proxy
     simbadProxy: "https://js9.si.edu/cgi-bin/simbad-proxy.cgi", // simbad proxy
     catalogs:   {ras: ["RA", "_RAJ2000", "RAJ2000"],  // cols to search for ..
@@ -183,11 +208,13 @@ JS9.globalOpts = {
 		 tooltip: "$xreg.data.ra $xreg.data.dec"}, // tooltip format
     topColormaps: ["grey", "heat", "cool", "viridis", "magma", "sls", "red", "green", "blue"], // toplevel colormaps
     infoBox: ["file", "object", "wcsfov", "wcscen", "wcspos", "impos", "physpos", "value", "regions", "progress"],
-    menuBar: ["file", "view", "zoom", "scale", "color", "region", "wcs", "analysis", "help"],
+    menuBar: ["file", "edit", "view", "zoom", "scale", "color", "region", "wcs", "analysis", "help"],
+    menubarStyle: "classic",                              // mac or classic
+    userMenus: false,                                     // add user menus?
     toolBar: ["linear", "log", "annulus", "box", "circle", "ellipse", "line", "polygon", "remove", "incexcl", "srcbkgd", "zoomin", "zoomout", "zoom1"],
     hiddenPluginDivs: [], 	     // which static plugin divs start hidden
     separate: {layout: "auto", leftMargin: 10, topMargin: 10}, // separate a display
-    imageTemplates: ".fits,.fts,.png,.jpg,.jpeg", // templates for local images
+    imageTemplates: ".fits,.fts,.png,.jpg,.jpeg,.fz", // templates for local images
     regionTemplates: ".reg",         // templates for local region file input
     sessionTemplates: ".ses,.js9ses",// templates for local session file input
     colormapTemplates: ".cmap",      // templates for local colormap file input
@@ -207,7 +234,9 @@ JS9.imageOpts = {
     exp: 1000,				// default exp value for scaling
     colormap: "grey",			// default color map
     scale: "linear",			// default scale algorithm
-    scaleclipping: "dataminmax",	// "dataminmax" or "zscale" to start
+    scaleclipping: "dataminmax",	// "dataminmax", "zscale", or "user" (when scalemin, scalemax is supplied)
+    scalemin: Number.NaN,               // default scale min is undefined
+    scalemax: Number.NaN,               // default scale max is undefined
     zscalecontrast: 0.25,		// default from ds9
     zscalesamples: 600,			// default from ds9
     zscaleline: 120,			// default from ds9
@@ -227,13 +256,21 @@ JS9.imageOpts = {
     nancolor: "#000000",		// 6-digit #hex color for NaN values
     wcsalign: true,			// align image using wcs after reproj?
     rotationMode: "relative",		// default: relative or absolute?
+    crosshair: false,			// enable crosshair?
     ltvbug:  true,			// add 0.5/ltm to image LTV values?
     listonchange: false			// whether to list after a reg change
 };
 
-// allows regions opts to be overridden in preferences
-JS9.regionOpts = {
-};
+// allows regions opts (in Regions.opts) to be overridden via js9prefs.js
+JS9.regionOpts = {};
+// allows catalog opts (in Catalogs.opts) to be overridden via js9prefs.js
+JS9.catalogOpts = {};
+// allows crosshair opts (in Crosshair.opts) to be overridden via js9prefs.js
+JS9.crosshairOpts = {};
+// allows grid opts (in Grid.opts) to be overridden via js9prefs.js
+JS9.gridOpts = {};
+// allows emscripten opts (in Module) to be overridden via js9prefs.js
+JS9.emscriptenOpts = {};
 
 // defaults for analysis (macro expansion)
 JS9.analOpts = {
@@ -242,11 +279,7 @@ JS9.analOpts = {
     // location of datapath's param html file
     dpathURL: "params/datapath.html",
     // location of filepath's param html file
-    fpathURL: "params/filepath.html",
-    // prepend $JS9_DIR to relative fitsFile paths?
-    prependJS9Dir: true,
-    // use as path to FITS data or use incoming path if not set
-    dataDir: null
+    fpathURL: "params/filepath.html"
 };
 
 // light window opts
@@ -271,8 +304,8 @@ JS9.lightOpts = {
 
 // colors for text messages
 JS9.textColorOpts = {
-    regions: "#00FF00",
-    info:    "#00FF00",
+    regions: "#C7D401",
+    info:    "#C7D401",
     inimage: "#000000"
 };
 
@@ -441,31 +474,48 @@ if(  /iPad|iPhone|iPod/.test(navigator.platform) &&
      /11_2_(?:[2-9])/.test(navigator.userAgent)    ){
     JS9.globalOpts.useWasm = false;
 }
+// Jupyter doesn't seem to be able to load wasm (7/4/2018)
+if( window.hasOwnProperty("Jupyter") ){
+    JS9.globalOpts.useWasm = false;
+}
+
 // iOS has severe memory limits (05/2017)
+// also force user to turn on crosshair, since it works with one finger
 if( JS9.BROWSER[3] ){
     JS9.globalOpts.maxMemory = Math.min(JS9.globalOpts.maxMemory, 350000000);
     JS9.globalOpts.image.xdim = 2048 * 2;
     JS9.globalOpts.image.ydim = 2048 * 2;
+    JS9.REPROJDIM = 1024;
+    JS9.imageOpts.crosshair = false;
 }
 
 // ---------------------------------------------------------------------
 // JS9 Image object to manage images
 // ---------------------------------------------------------------------
+
 JS9.Image = function(file, params, func){
-    var i, card, pars, sarr, nzoom;
-    var display;
+    var i, card, pars, sarr, nzoom, display, txeq;
     var that = this;
     var localOpts=null;
     var nhist=0, ncomm=0;
     var mksect = function(that, localOpts){
 	var zoom;
+	var bin = 1;
 	var arr = [];
+	// image xcen and ycen values must take binning into account
+	if( localOpts.bin !== undefined ){
+	    if( typeof localOpts.bin === "string" ){
+		bin = parseInt(localOpts.bin, 10);
+	    } else {
+		bin = localOpts.bin;
+	    }
+	}
 	// make up section array from default values
 	if( localOpts && (localOpts.xcen !== undefined) ){
-	    arr.push(localOpts.xcen);
+	    arr.push(localOpts.xcen/bin);
 	}
 	if( localOpts && (localOpts.ycen !== undefined) ){
-	    arr.push(localOpts.ycen);
+	    arr.push(localOpts.ycen/bin);
 	}
 	if( localOpts && (localOpts.zoom !== undefined) ){
 	    zoom = that.parseZoom(localOpts.zoom);
@@ -482,10 +532,9 @@ JS9.Image = function(file, params, func){
 	JS9.images.push(this);
 	// notify the helper
 	this.notifyHelper();
-	// call function, if necessary
-	if( func ){
-	    try{ JS9.xeqByName(func, window, this); }
-	    catch(e){ JS9.error("in image onload callback", e, false); }
+	// add regions, if necessary
+	if( localOpts && localOpts.regions ){
+	    this.addShapes("regions", localOpts.regions);
 	}
 	// plugin callbacks
 	this.xeqPlugins("image", "onimageload");
@@ -497,6 +546,11 @@ JS9.Image = function(file, params, func){
 	this.status.load = "complete";
 	// done loading, reset wait cursor
 	JS9.waiting(false);
+	// everything else is done so call onload func, if necessary
+	if( func ){
+	    try{ JS9.xeqByName(func, window, this); }
+	    catch(e){ JS9.error("in image onload callback", e, false); }
+	}
     };
     // params can be an object containing local params, or the display string
     if( params ){
@@ -526,9 +580,6 @@ JS9.Image = function(file, params, func){
     this.params = {};
     // image-specific scratch space
     this.tmp = {};
-    // scale min and max to impossible numbers
-    this.params.scalemin = Number.Nan;
-    this.params.scalemax = Number.Nan;
     // xeq callback for region changes?
     this.params.xeqonchange = true;
     // copy image parameters
@@ -543,7 +594,11 @@ JS9.Image = function(file, params, func){
     }
     // set the colormap object from colormap name (text string)
     // this.cmapObj = JS9.lookupColormap(this.params.colormap);
+    // (turn off plugin call, since we are not fully loaded)
+    txeq = JS9.globalOpts.xeqPlugins;
+    JS9.globalOpts.xeqPlugins = false;
     this.setColormap(this.params.colormap);
+    JS9.globalOpts.xeqPlugins = txeq;
     // do we display?
     this.displayMode = true;
     // initialize click state
@@ -801,11 +856,16 @@ JS9.Image.prototype.getImageData = function(dflag){
 };
 
 // undisplay the image, release resources
-JS9.Image.prototype.closeImage = function(){
+JS9.Image.prototype.closeImage = function(opts){
     var i, j, tim, key, raw, carr;
     var iscurrent = false;
     var ilen= JS9.images.length;
     var display = this.display;
+    opts = opts || {};
+    if( typeof opts === "string" ){
+	try{ opts = JSON.parse(opts); }
+	catch(e){ JS9.error("can't parse closeImage opts: " + opts, e); }
+    }
     // look for the image in the image list, and remove it
     for(i=0; i<ilen; i++){
 	if( this === JS9.images[i] ){
@@ -816,14 +876,16 @@ JS9.Image.prototype.closeImage = function(){
 	    }
 	    // clear display if this is the currently displayed image
 	    if( iscurrent ){
-		// nothing on the screen
-		tim.display.clearMessage();
-		tim.display.context.clear();
+		// clear unless specifically asked not to
+		if( opts.clear !== false ){
+		    tim.display.clearMessage();
+		    tim.display.context.clear();
+		}
 		// clear all layers
 		for( key in tim.layers ){
 		    if( tim.layers.hasOwnProperty(key) ){
 			// tim.layers[key].canvas.clear();
-			tim.showShapeLayer(key, false);
+			tim.showShapeLayer(key, false, {local: true});
 		    }
 		}
 	    }
@@ -1113,6 +1175,7 @@ JS9.Image.prototype.mkRawDataFromPNG = function(){
     var i, s, idx, offscreen, dlen, mode, tval,  getfunc, littleEndian;
     var card, pars, clen;
     var realpng, hstr, hstrs = [];
+    var nhist=0, ncomm=0;
     // memory array of 8 bytes
     var abuf = new ArrayBuffer(8);
     // we will transfer unsigned bytes from the png file into the mem array
@@ -1179,7 +1242,13 @@ JS9.Image.prototype.mkRawDataFromPNG = function(){
 	    card = this.raw.cardstr.slice(i*80, (i+1)*80);
 	    pars = JS9.cardpars(card);
 	    if( pars !== undefined ){
-		this.raw.header[pars[0]] = pars[1];
+		if( pars[0] === "HISTORY" ){
+		    this.raw.header[pars[0]+'__'+nhist++] = pars[1];
+		} else if( pars[0] === "COMMENT" ){
+		    this.raw.header[pars[0]+'__'+ncomm++] = pars[1];
+		} else {
+		    this.raw.header[pars[0]] = pars[1];
+		}
 	    }
 	}
     }
@@ -1504,6 +1573,8 @@ JS9.Image.prototype.mkRawDataFromHDU = function(obj, opts){
 	    this.raws.push({from: "hdu", id: opts.rawid});
 	    // assign this object to the high-level raw data object
 	    this.raw = this.raws[rlen];
+	    // the old raw object is invalid
+	    oraw = null;
 	}
     }
     // now save the hdu in the raw object
@@ -1524,6 +1595,7 @@ JS9.Image.prototype.mkRawDataFromHDU = function(obj, opts){
     } else if( obitpix ){
 	this.raw.bitpix = obitpix;
     }
+
     // if the data is base64-encoded, decode it now
     if( hdu.encoding === "base64" ){
 	s = window.atob(hdu.image);
@@ -1661,6 +1733,18 @@ JS9.Image.prototype.mkRawDataFromHDU = function(obj, opts){
 	if( header.CDELT2 !== undefined ){
 	    header.CDELT2 = header.CDELT2 * bin;
 	}
+	if( header.CD1_1 !== undefined ){
+	    header.CD1_1 = header.CD1_1 * bin;
+	}
+	if( header.CD1_2 !== undefined ){
+	    header.CD1_2 = header.CD1_2 * bin;
+	}
+	if( header.CD2_1 !== undefined ){
+	    header.CD2_1 = header.CD2_1 * bin;
+	}
+	if( header.CD2_2 !== undefined ){
+	    header.CD2_2 = header.CD2_2 * bin;
+	}
 	header.LTM1_1 = header.LTM1_1 || 1.0;
 	header.LTM1_1 = header.LTM1_1 / bin;
 	header.LTM2_1 = header.LTM2_1 || 0.0;
@@ -1746,6 +1830,8 @@ JS9.Image.prototype.mkRawDataFromHDU = function(obj, opts){
     } else {
 	this.imtab = hdu.table ? "table" : "image";
     }
+    // also associate imtab with this raw layer
+    this.raw.imtab = this.imtab;
     // min and max data values
     if( hdu.dmin !== undefined && hdu.dmax !== undefined ){
 	// data min and max in object
@@ -2834,15 +2920,15 @@ JS9.Image.prototype.refreshImage = function(obj, opts){
 	// update region values
 	this.updateShapes("regions", "all", "binning");
     }
-    // call onrefresh function, if necessary
-    if( opts.onrefresh ){
-	try{ JS9.xeqByName(opts.onrefresh, window, this); }
-	catch(e){ JS9.error("in image refresh callback", e); }
-    }
     // plugin callbacks
     this.xeqPlugins("image", "onimagerefresh");
     // all done
     JS9.waiting(false);
+    // everything else is done so call refresh func, if necessary
+    if( opts.onrefresh ){
+	try{ JS9.xeqByName(opts.onrefresh, window, this); }
+	catch(e){ JS9.error("in image refresh callback", e); }
+    }
     // allow chaining
     return this;
 };
@@ -2887,7 +2973,7 @@ JS9.Image.prototype.fileDimensions = function() {
    In such a case, we want to convert physical position to the image position
    of the physical file.
    This situation is signalled by the presence of a parent lcs object.
-   This routine is used in displaySection and the fitsy binning.js plugin.
+   This routine is used to display sections and the fitsy binning.js plugin.
 */
 JS9.Image.prototype.maybePhysicalToImage = function(pos){
     var lpos, ipos, npos;
@@ -2905,7 +2991,7 @@ JS9.Image.prototype.maybePhysicalToImage = function(pos){
 JS9.Image.prototype.displaySection = function(opts, func) {
     var that = this;
     var oproxy, hdu, from, obj, oreg, nim, topts, fdims;
-    var ipos, lpos, npos, binval1, binval2, arr, sect;
+    var ipos, lpos, npos, binval1, binval2, tbin, arr, sect;
     var getval3 = function(val1, val2, val3){
 	var res;
 	if( !JS9.isNull(val1) ){
@@ -2968,6 +3054,7 @@ JS9.Image.prototype.displaySection = function(opts, func) {
 	    topts.id = iid;
 	    topts.refreshRegions = true;
 	    topts.resetSection = true;
+	    topts.rawid = that.raw.id;
 	    // function to perform when image is refreshed
 	    topts.onrefresh = topts.ondisplaysection || topts.onrefresh || func;
 	    // refresh the current image with the new hdu
@@ -3039,28 +3126,35 @@ JS9.Image.prototype.displaySection = function(opts, func) {
     }
     // allow binning relative to current, e.g., *2, /4, +1, -3
     if( typeof opts.bin === "string" ){
+	// save and remove mode flag
+	if( opts.bin.match(/[as]$/) ){
+	    opts.binMode = opts.bin.slice(-1);
+	    opts.bin = opts.bin.slice(0, -1); 
+	}
+	// temp binning value
+	tbin = sect.bin || this.binning.bin;
 	switch( opts.bin.charAt(0) ){
 	case "*":
 	case "x":
 	case "X":
-	    opts.bin = this.binning.bin * parseInt(opts.bin.slice(1), 10);
+	    opts.bin = tbin * parseInt(opts.bin.slice(1), 10);
 	    break;
 	case "/":
-	    opts.bin = this.binning.bin / parseInt(opts.bin.slice(1), 10);
+	    opts.bin = tbin / parseInt(opts.bin.slice(1), 10);
 	    break;
 	case "+":
-	    opts.bin = this.binning.bin + parseInt(opts.bin.slice(1), 10);
+	    opts.bin = tbin + parseInt(opts.bin.slice(1), 10);
 	    break;
 	case "-":
-	    opts.bin = this.binning.bin - parseInt(opts.bin.slice(1), 10);
+	    opts.bin = tbin - parseInt(opts.bin.slice(1), 10);
 	    break;
 	case "i":
 	case "I":
-	    opts.bin = this.binning.bin * 2;
+	    opts.bin = tbin * 2;
 	    break;
 	case "o":
 	case "O":
-	    opts.bin = this.binning.bin / 2;
+	    opts.bin = tbin / 2;
 	    break;
 	default:
 	    if( JS9.isNumber(opts.bin) ){
@@ -3086,8 +3180,17 @@ JS9.Image.prototype.displaySection = function(opts, func) {
 	opts.bin  = getval3(opts.bin,  sect.bin,  JS9.fits.options.image.bin);
 	break;
     }
-    // one final check on binning
+    opts.binMode  = getval3(opts.binMode, sect.binMode, JS9.globalOpts.binMode);
+    // final checks on binning
+    // handle string bin, possibly containing explicit binMode
+    if( typeof opts.bin === "string" ){
+	if( opts.bin.match(/[as]$/) ){
+	    opts.binMode = opts.bin.slice(-1);
+	}
+	opts.bin = parseInt(opts.bin, 10);
+    }
     opts.bin  = Math.max(1, opts.bin || 1);
+    // filter
     opts.filter = getval3(opts.filter, sect.filter, "");
     // save the filter, if necessary
     this.raw.filter = opts.filter || "";
@@ -3112,9 +3215,14 @@ JS9.Image.prototype.displaySection = function(opts, func) {
 	    delete opts.xdim;
 	    arr.push({name: "ydim", value: opts.ydim});
 	    delete opts.ydim;
+	    // recombine bin and binMode, if necessary
+	    if( opts.binMode ){
+		opts.bin = sprintf("%s%s", opts.bin, opts.binMode);
+		delete opts.binMode;
+	    }
 	    arr.push({name: "bin", value: opts.bin});
 	    delete opts.bin;
-	    arr.push({name: "filter", value: opts.filter||""});
+	    arr.push({name: "filter", value: opts.filter || ""});
 	    // hack: pass filter along so that it can reach binning plugin
 	    // delete opts.filter;
 	    // get image section from external file
@@ -3170,8 +3278,13 @@ JS9.Image.prototype.displaySection = function(opts, func) {
 		}
 		// json fits info
 		if( rarr[1] ){
-		    try{ jobj = JSON.parse(rarr[1]); }
-		    catch(ignore){}
+		    try{
+			jobj = JSON.parse(rarr[1]);
+		    }
+		    catch(ignore){
+			JS9.log("couldn't parse imsection as JSON: %s", f);
+			jobj = null;
+		    }
 		    if( jobj ){
 			opts.extname = jobj.extname;
 			opts.extnum = jobj.extnum;
@@ -3294,6 +3407,7 @@ JS9.Image.prototype.displayExtension = function(extid, opts, func){
 
 // display the specified slice of a 3D or 4d FITS cube
 JS9.Image.prototype.displaySlice = function(slice, opts, func){
+    var i, topts;
     // opts can be an object or json
     if( typeof opts === "string" ){
 	try{ opts = JSON.parse(opts); }
@@ -3306,30 +3420,44 @@ JS9.Image.prototype.displaySlice = function(slice, opts, func){
     if( slice === undefined ){
 	JS9.error("missing slice for displaySlice()");
     }
-    // slicename or slicenum specified?
-    if( JS9.isNumber(slice) ){
-	opts.slice = sprintf("*,*,%s", slice);
+    if( slice === "all" && this.raw.header.NAXIS === 3 ){
+	// start with slice 1, already loaded
+	this.displaySlice(1, topts, func);
+	// load and display the other slices separately
+	for(i=2; i<=this.raw.header.NAXIS3; i++){
+	    topts = $.extend(true, {}, opts, {separate: true});
+	    this.displaySlice(i, topts, func);
+	}
     } else {
-	opts.slice = slice;
+	// slicename or slicenum specified?
+	if( JS9.isNumber(slice) ){
+	    opts.slice = sprintf("*,*,%s", slice);
+	} else {
+	    opts.slice = slice;
+	}
+	// cleanup previous FITS file heap before handling the new FITS file,
+	// or we end up with a memory leak in the emscripten heap
+	if( JS9.fits.cleanupFITSFile && this.raw.hdu && this.raw.hdu.fits ){
+	    JS9.fits.cleanupFITSFile(this.raw.hdu.fits, false);
+	}
+	// process the FITS file by going to the slice
+	this.displaySection(opts, func);
     }
-    // cleanup previous FITS file heap before handling the new FITS file,
-    // or we end up with a memory leak in the emscripten heap
-    if( JS9.fits.cleanupFITSFile && this.raw.hdu && this.raw.hdu.fits ){
-	JS9.fits.cleanupFITSFile(this.raw.hdu.fits, false);
-    }
-    // process the FITS file by going to the slice
-    this.displaySection(opts, func);
     // allow chaining
     return this;
 };
 
 // convert current image to array
-JS9.Image.prototype.toArray = function(){
+JS9.Image.prototype.toArray = function(opts){
     var i, j, k, bpe, idx, le;
-    var header, npad, arr, buf, dbuf, _dbuf;
-    dbuf = this.raw.data.buffer;
+    var header, npad, arr, buf, _dbuf;
+    var dbuf = this.raw.data.buffer;
+    // opts is optonal
+    opts = opts || {};
+    // always perform the header keyword fix
+    opts.simple = true;
     // get header
-    header = JS9.raw2FITS(this.raw);
+    header = JS9.raw2FITS(this.raw, opts);
     // append padding to header now
     npad = 2880 - (header.length % 2880);
     if( npad === 2880 ){ npad = 0; }
@@ -3935,7 +4063,7 @@ JS9.Image.prototype.notifyHelper = function(){
 	    if( im ){
 		s = r[1];
 		if( s !== "?" ){
-		    if( !JS9.analOpts.dataDir ){
+		    if( !JS9.globalOpts.dataDir ){
 			im.fitsFile = s;
 			// prepend base of png path if fits file has no path
 			// is this a bad "feature" in tpos?? probably ...
@@ -3950,7 +4078,7 @@ JS9.Image.prototype.notifyHelper = function(){
 			    }
 			}
 			// prepend JS9_DIR on files if fits is not absolute
-			if( JS9.analOpts.prependJS9Dir ){
+			if( JS9.globalOpts.prependJS9Dir ){
 			    if( im.fitsFile &&
 				!im.fitsFile.match(/^\${JS9_DIR}/) &&
 				im.fitsFile.charAt(0) !== "/" ){
@@ -3964,7 +4092,7 @@ JS9.Image.prototype.notifyHelper = function(){
 			}
 		    } else {
 			cc = s.lastIndexOf("/") + 1;
-			im.fitsFile = JS9.analOpts.dataDir + "/" + s.slice(cc);
+			im.fitsFile = JS9.globalOpts.dataDir+"/"+ s.slice(cc);
 		    }
 		    if( JS9.DEBUG > 1 ){
 			JS9.log("JS9 fitsFile: %s %s", im.file, im.fitsFile);
@@ -4213,6 +4341,31 @@ JS9.Image.prototype.runAnalysis = function(name, opts, func){
     var i, a, m;
     var that = this;
     var obj = {};
+    var analError = function(s, t){
+	// shouldn't happen
+	if( !JS9.helper ){
+	    JS9.error(s, t);
+	}
+	switch(JS9.helper.type){
+	case 'nodejs':
+	case 'socket.io':
+	    // when socket.io is long-polling, throwing an error prevent the
+	    // polling from completing, leading to a timeout error and disaster.
+	    // to allow the polling to complete, throw the error after a delay
+	    if( JS9.helper.socket &&
+		JS9.helper.socket.io.engine.transport.name === "polling"){
+		window.setTimeout(function(){
+		    JS9.error(s, t);
+		}, 0);
+	    } else {
+		JS9.error(s, t);
+	    }
+	    break;
+	default:
+	    JS9.error(s, t);
+	    break;
+	}
+    };
     // opts can be an object or json
     if( typeof opts === "string" ){
 	try{ opts = JSON.parse(opts); }
@@ -4293,7 +4446,8 @@ JS9.Image.prototype.runAnalysis = function(name, opts, func){
 		    JS9.log(s);
 		} else {
 		    // otherwise, throw an error
-		    JS9.error(s, JS9.analOpts.epattern);
+		    analError(s, JS9.analOpts.epattern);
+		    return;
 		}
 	    } else if( robj.errcode ){
 		s = sprintf("ERROR: running %s [%s]", a.name, robj.errcode);
@@ -4302,7 +4456,8 @@ JS9.Image.prototype.runAnalysis = function(name, opts, func){
 		    JS9.log(s);
 		} else {
 		    // otherwise, throw an error
-		    JS9.error(s, JS9.analOpts.epattern);
+		    analError(s, JS9.analOpts.epattern);
+		    return;
 		}
 	    }
 	    // display according to type
@@ -4528,8 +4683,12 @@ JS9.Image.prototype.displayAnalysis = function(type, s, opts){
 	break;
     case "plot":
 	// convert results to js object
-	try{ pobj = JSON.parse(s); }
-	catch(e){ JS9.error("can't plot return data: " + s, e);	}
+	if( typeof s === "string" ){
+	    try{ pobj = JSON.parse(s); }
+	    catch(e){ JS9.error("can't plot return data: " + s, e);	}
+	} else if( typeof s === "object" ){
+	    pobj = s;
+	}
 	// sanity check
 	if( !pobj ){
 	    return;
@@ -4816,8 +4975,8 @@ JS9.Image.prototype.loadAuxFile = function(type, func){
 	    aim.id = aim.file.split("/").reverse()[0];
 	    // init some parameters
 	    aim.params = {};
-	    aim.params.scalemin = Number.Nan;
-	    aim.params.scalemax = Number.Nan;
+	    aim.params.scalemin = Number.NaN;
+	    aim.params.scalemax = Number.NaN;
 	    // array to hold raw data as we create it
 	    aim.raws = [];
 	    // create the png object
@@ -4863,12 +5022,14 @@ JS9.Image.prototype.saveFITS = function(fname){
     var arr, blob;
     if( window.hasOwnProperty("saveAs") ){
 	if( fname ){
-	    fname = fname.replace(/(png|jpg|jpeg)$/i, "fits");
+	    fname = fname
+		.replace(/\.fz$/i, "")
+		.replace(/(png|jpg|jpeg)$/i, "fits");
 	} else {
 	    fname = "js9.fits";
 	}
 	// first convert to array
-	arr = this.toArray();
+	arr = this.toArray({notab: true});
 	// then convert array to blob
 	blob = new Blob([arr], {type: "application/octet-binary"});
 	// save to disk
@@ -5090,6 +5251,14 @@ JS9.Image.prototype.updateValpos = function(ipos, disp){
     return obj;
 };
 
+// toggle display of value/position
+JS9.Image.prototype.toggleValpos = function(){
+    this.params.valpos = !this.params.valpos;
+    if( !this.params.valpos ){
+	this.display.clearMessage();
+    }
+};
+
 // get color map name
 JS9.Image.prototype.getColormap = function(){
     if(  this.cmapObj ){
@@ -5214,6 +5383,8 @@ JS9.Image.prototype.setScale = function(s0, s1, s2){
 	    that.params.scaleclipping = "zmax";
 	    that.params.scalemin = that.params.z1;
 	    that.params.scalemax = that.raw.dmax;
+	} else if( s === "user" ){
+	    that.params.scaleclipping = "user";
 	} else {
 	    JS9.error("unknown scale: " + s);
 	}
@@ -5252,6 +5423,10 @@ JS9.Image.prototype.getParam = function(param){
     if( !param ){
 	return null;
     }
+    // return param object
+    if( param === "all" ){
+	return this.params;
+    }
     // return value
     return this.params[param];
 };
@@ -5262,6 +5437,18 @@ JS9.Image.prototype.setParam = function(param, value){
     // sanity check
     if( !param ){
 	return null;
+    }
+    // merge in new params
+    if( param === "all" && typeof value === "object" ){
+	$.extend(true, this.params, value);
+	//hack: make this routine sort of work like setScale and setColormap
+	if( value.colormap ){
+	    this.setColormap(value.colormap, value.contrast, value.bias);
+	}
+	if( value.scale ){
+	    this.setScale(value.scale);
+	}
+	return this.params;
     }
     // save old value
     ovalue = this.params[param];
@@ -5378,30 +5565,260 @@ JS9.Image.prototype.zscale = function(setvals){
     return this;
 };
 
+// background-subtracted counts in regions
+// eslint-disable-next-line no-unused-vars
+JS9.Image.prototype.countsInRegions = function(args){
+    var that = this;
+    var i, s, vfile, bvfile, sect, ext, filter, dims, bin, opts, cmdswitches;
+    var sregions="field";
+    var bregions="";
+    var getreg = function(arg, macro, def){
+	var ii, rarr, reg, narg;
+	var regrexp= /(annulus|box|circle|ellipse|line|polygon|point|text) *\(/;
+	// if we have no region, we're done
+	if( !arg ){
+	    return def;
+	}
+	if( typeof arg === "string" ){
+	    narg = that.expandMacro(arg);
+	    // if we have no region, we're done
+	    if( !narg ){
+		return def;
+	    }
+	    // if its a known region, we're done
+	    if( narg.match(regrexp) ){
+		return narg;
+	    }
+	}
+	// look for a region specifier
+	rarr = that.getShapes("regions", arg);
+	// no region are returned: this is an error
+	if( !rarr || !rarr.length ){
+	    JS9.error("no regions found: " + arg);
+	}
+	// compose a region string from the returned regions
+	narg = "";
+	for(ii=0; ii<rarr.length; ii++){
+	    reg = rarr[ii];
+	    if( that.params.wcssys ){
+		// put wcs sys at the start
+		if( !narg ){
+		    narg = reg.wcssys || "";
+		}
+		// add wcs region string
+		narg += sprintf("; %s", reg.wcsstr);
+	    } else {
+		// put image sys at the start
+		if( !narg ){
+		    narg = reg.imsys || "";
+		}
+		// add image region string
+		narg += sprintf("; %s", reg.imstr);
+	    }
+	}
+	return narg || def;
+    };
+    // sanity check
+    if( !this.raw.hdu || !this.raw.hdu.fits || !this.raw.hdu.fits.vfile ){
+	JS9.error("no virtual file available for regcnts: " + this.id);
+    }
+    // convert json to an object
+    for(i=0; i<arguments.length; i++){
+	s = arguments[i];
+	if( typeof s === "string" && s.charAt(0) === '{' ){
+	    try{ arguments[i] = JSON.parse(s); }
+	    catch(e){ JS9.error("can't parse json arg in regcnts: "+s, e); }
+	}
+    }
+    // analyze arguments
+    switch(arguments.length){
+    case 0:
+	break;
+    case 1:
+	if( typeof arguments[0] === "object" ){
+	    opts = arguments[0];
+	} else {
+	    sregions = getreg(arguments[0], "$sregions", "field");
+	}
+	break;
+    case 2:
+	sregions = getreg(arguments[0], "$sregions", "field");
+	if( typeof arguments[1] === "object" ){
+	    opts = arguments[1];
+	} else {
+	    bregions = getreg(arguments[1], "$bregions", "");
+	}
+	break;
+    default:
+	sregions = getreg(arguments[0], "$sregions", "field");
+	bregions = getreg(arguments[1], "$bregions", "");
+	opts = arguments[2];
+	break;
+    }
+    // opts is optional
+    opts = opts || {};
+    // reduce can be taken from the global value
+    opts.reduce = opts.reduce || JS9.globalOpts.reduceRegcnts;
+    // same for reduction dims
+    opts.dim = opts.dim ||
+	Math.max(JS9.globalOpts.image.xdim, JS9.globalOpts.image.ydim);
+    // check for command switches
+    cmdswitches = opts.cmdswitches || "";
+    // get final file, including filters and extensions
+    vfile = this.raw.hdu.fits.vfile;
+    ext =  this.file.match(/\[.*\]/);
+    if( ext ){
+	vfile += ext;
+    }
+    if( this.imtab === "table" ){
+	filter = this.raw.hdu.table.filter;
+	if( filter && !vfile.match(filter) ){
+	    if( vfile.match(/\]\[/) ){
+		vfile = vfile.slice(0, -1) + '&&' + filter + ']';
+	    } else {
+		vfile += '[' + filter + ']';
+	    }
+	}
+    }
+    // reduce file size, if necessary
+    if( opts.reduce && !this.parentFile ){
+	dims = this.fileDimensions();
+	bin = Math.floor((Math.max(dims.xdim, dims.ydim) / opts.dim) + 0.5);
+	if( bin > 1 ){
+	    if( this.imtab === "table" ){
+		// for tables, regcnts has a -b switch
+		cmdswitches += sprintf(" -b %s", bin);
+	    } else {
+		// for images, make a new binned file
+		bvfile = sprintf("bin%s_%s", bin, vfile);
+		sect = sprintf("0@0,0@0,%s", bin);
+		JS9.imsection(vfile, bvfile, sect, "");
+		vfile = bvfile;
+	    }
+	}
+    }
+    // could take a while ...
+    JS9.waiting(true, this.display);
+    // call low-level regcnts
+    s = JS9.regcnts(vfile, sregions, bregions, cmdswitches);
+    // all done waiting
+    JS9.waiting(false);
+    // remove binned file, if necessary
+    if( bvfile ){
+	Astroem.vunlink(bvfile);
+    }
+    // check for regions or cfitio errors
+    if( s.match(/^ERROR/) || s.match(/FITSIO status/) ){
+	JS9.error(s);
+    }
+    // display in a lightwin, if necessary
+    if( opts.lightwin ){
+	// display counts in a light window
+	this.displayAnalysis("text", s, {divid: JS9.globalOpts.analysisDiv});
+    }
+    // return results, including errors
+    return s;
+};
+
+// radial profile plot
+// eslint-disable-next-line no-unused-vars
+JS9.Image.prototype.radialProfile = function(args){
+    var i, s, xlabel, ylabel, obj, cobj, pobj, res, el, opts;
+    var color, errorbars, errorcolor;
+    var carr = [];
+    var swobj = {cmdswitches: "-j -r"};
+    // make up argument list, add required radial profile switches to opts
+    for(i=0; i<arguments.length; i++){
+	if( typeof arguments[i] === "object" ){
+	    // integrate our switches into passed opts
+	    cobj = $.extend(true, {}, arguments[i], swobj);
+	    carr.push(cobj);
+	    opts = cobj;
+	} else {
+	    carr.push(arguments[i]);
+	}
+    }
+    // if no opts supplied, add the switches manually
+    if( !cobj ){
+	carr.push(swobj);
+    }
+    // opts is optional
+    opts = opts || {};
+    // call regcnts routine
+    s = JS9.Image.prototype.countsInRegions.apply(this, carr);
+    // need a json string in return
+    try{ obj = JSON.parse(s); }
+    catch(e){ JS9.error("can't parse regcnts JSON", e); }
+    if( !obj.columnUnits.radii ){
+	JS9.error("no radii available for radial profile");
+    }
+    // get plot labels
+    xlabel = obj.columnUnits.radii;
+    ylabel = obj.columnUnits.surfBrightness;
+    // get plot colors
+    color = opts.color || "green";
+    errorcolor = opts.errorcolor || "red";
+    if( JS9.isNull(opts.errorbars) || opts.errorbars ){
+	errorbars = "y";
+    } else {
+	errorbars = "n";
+    }
+    // init plot object
+    pobj = {color: sprintf("%s", color), label : sprintf("surface brightness(%s) vs. radius(%s)", ylabel, xlabel), points:{"errorbars" : sprintf("%s", errorbars), "yerr" : {"show" : "true", "color" : sprintf("%s", errorcolor)}}, data: []};
+    // add data values
+    for(i=0; i<obj.backgroundSubtractedResults.length; i++){
+	res = obj.backgroundSubtractedResults[i];
+	if( res.radius2 === "undefined" ||
+	    res.radius2 === "NA"        ||
+	    res.radius1 > res.radius2   ){
+	    JS9.error("radial profile source region must be an annulus");
+	}
+	el = [(res.radius1 + res.radius2)/2, res.surfBrightness, res.surfError];
+	pobj.data.push(el);
+    }
+    // display results
+    return this.displayAnalysis("plot", pobj,
+				{divid: JS9.globalOpts.analysisDiv});
+};
+
 // make (or select) a raw data layer
-// im.rawDataLayer(obj, func) -- editing existing or create new raw data layer
-// obj properties:
+// calling sequences:
+//   im.rawDataLayer(obj, func) -- editing existing or create new raw data layer
+// where obj can contain:
 //    rawid: id of new raw data (default: "alt")
 //    oraw: id of raw data to pass to func or "current" (default: "raw0")
 //    from: string describing origin of this raw data (def: "func")
-// im.rawDataLayer(id) -- switch to existing raw data later with specified id
+// or:
+//   im.rawDataLayer(id, func) -- editing existing or create new raw data layer
+// or:
+//   im.rawDataLayer(id) -- switch to existing raw data later with specified id
+// or:
+//   im.rawDataLayer(id, "remove") -- remove raw data later with specified id
+// or:
+//   im.rawDataLayer() -- return name of th current layer
 JS9.Image.prototype.rawDataLayer = function(opts, func){
-    var i, j, raw, oraw, nraw, rawid, cur, nlen, carr;
+    var i, j, id, mode, raw, oraw, nraw, rawid, cur, nlen, carr;
     // no arg => return name of current raw
     if( !arguments.length ){
 	return this.raw.id;
     }
-    // opts is a string and no function: switch to a different raw data layer
-    // opts is a string with function: generate opts object
+    // opts is a string with second arg a function: generate opts object
+    // opts is a string, no function: switch to a different raw data layer
+    // opts is a string + "remove": remove specified layer
     if( typeof opts === "string" ){
 	if( typeof func === "function" ){
+	    // change: rawDataLayer(id, func) to rawDataLater(obj, func)
 	    opts = {rawid: opts};
 	} else {
+	    id = opts;
+	    mode = func;
+	    // look for raw layer with the specified id
 	    for(i=0; i<this.raws.length; i++){
 		raw = this.raws[i];
-		if( opts === raw.id ){
-		    if( func === "remove" ){
-			if( opts === JS9.RAWID0 ){
+		// are we deleting this raw layer?
+		if( id === raw.id ){
+		    if( mode === "remove" ){
+			if( id === JS9.RAWID0 ){
 			    JS9.error("can't remove primary (raw0) data layer");
 			}
 			if( raw.hdu && raw.hdu.fits ){
@@ -5427,30 +5844,26 @@ JS9.Image.prototype.rawDataLayer = function(opts, func){
 			}
 			// remove layer
 			this.raws.splice(i, 1);
-			// renew bitpix, if necessary
-			if( this.raw.header.bitpix ){
-			    this.raw.bitpix = this.raw.header.bitpix;
-			}
-			// re-calculate min and max
-			this.dataminmax();
-			this.mkSection();
-			this.initWCS();
-			this.initLCS();
-			this.displayImage("all", opts);
-			this.refreshLayers();
-			return true;
+		    } else {
+			// switch to new raw layer
+			this.raw = raw;
 		    }
-		    this.raw = raw;
-		    if( this.raw.header.bitpix ){
-			this.raw.bitpix = this.raw.header.bitpix;
+		    // configure the current raw layer
+		    if( this.raw.header.BITPIX ){
+			this.raw.bitpix = this.raw.header.BITPIX;
 		    }
+		    // reset imtab
+		    this.imtab = this.raw.imtab || this.imtab;
 		    // set data min and max
 		    this.dataminmax();
+		    // reset section
 		    this.mkSection();
+		    // reinit coordinate transforms
 		    this.initWCS();
 		    this.initLCS();
 		    // redisplay using these data
 		    this.displayImage("all");
+		    // refresh layers
 		    this.refreshLayers();
 		    // extended plugins
 		    if( JS9.globalOpts.extendedPlugins ){
@@ -5459,6 +5872,7 @@ JS9.Image.prototype.rawDataLayer = function(opts, func){
 		    return true;
 		}
 	    }
+	    // did not find the specified layer
 	    return false;
 	}
     }
@@ -5951,6 +6365,11 @@ JS9.Image.prototype.rotateData = function(angle, opts){
     // old and new header
     oheader = this.raw.header;
     nheader = $.extend(true, {}, oheader);
+    // restrict size of reprojection to raw data size
+    if( this.raw.width && this.raw.height ){
+	nheader.NAXIS1 = this.raw.width;
+	nheader.NAXIS2 = this.raw.height;
+    }
     // normalized values from wcslib
     if( this.raw.wcsinfo ){
 	ocdelt1 = this.raw.wcsinfo.cdelt1 || 0;
@@ -5989,75 +6408,39 @@ JS9.Image.prototype.rotateData = function(angle, opts){
     return this.reprojectData(nheader, opts);
 };
 
-// reproject image using WCS info
-// creates a new raw data layer ("reproject")
-JS9.Image.prototype.reprojectData = function(wcsim, opts){
-    var that = this;
-    var im;
+// low-level reprojection: creates reprojected file, but does not display it
+// instead, it returns the name of the reprojected FITS file (emscripten vfile)
+// this is the basis for reprojectData, but can be used in other routines that
+// require a reprojection
+JS9.Image.prototype.reproject = function(wcsim, opts){
+    var twcs = {};
+    var rcomplete = false;
+    var awvfile, awvfile2, wvfile, owvfile, nwvfile;
+    var wcsheader, wcsstr, oheader, nheader;
+    var arr, ivfile, ovfile, rstr, key;
+    var tab, tx1, tx2, ty1, ty2, s;
+    var n, avfile, earr, cmdswitches;
+    var wcsexp = /SIMPLE|BITPIX|NAXIS|NAXIS[1-4]|AMDX|AMDY|CD[1-2]_[1-2]|CDELT[1-4]|CNPIX[1-4]|CO1_[1-9][0-9]|CO2_[1-9][0-9]|CROTA[1-4]|CRPIX[1-4]|CRVAL[1-4]|CTYPE[1-4]|CUNIT[1-4]|DATE|DATE_OBS|DC-FLAG|DEC|DETSEC|DETSIZE|EPOCH|EQUINOX|EQUINOX[a-z]|IMAGEH|IMAGEW|LATPOLE|LONGPOLE|MJD-OBS|PC00[1-4]00[1-4]|PC[1-4]_[1-4]|PIXSCALE|PIXSCAL[1-2]|PLTDECH|PLTDECM|PLTDECS|PLTDECSN|PLTRAH|PLTRAM|PLTRAS|PPO|PROJP[1-9]|PROJR0|PV[1-3]_[1-3]|PV[1-4]_[1-4]|RA|RADECSYS|SECPIX|SECPIX|SECPIX[1-2]|UT|UTMID|VELOCITY|VSOURCE|WCSAXES|WCSDEP|WCSDIM|WCSNAME|XPIXSIZE|YPIXSIZE|ZSOURCE|LTM|LTV/;
+    var ptypeexp = /TAN|SIN|ZEA|STG|ARC/;
     // sanity checks
+    if( !JS9.reproject || !wcsim || this === wcsim ){
+	return;
+    }
     if( !this.raw || !this.raw.header || !this.raw.wcsinfo ){
 	JS9.error("no WCS info available for reprojection");
     }
-    if( !wcsim || !JS9.reproject ){
-	return;
-    }
-    // is this a string containing an image name or WCS values?
-    if( typeof wcsim === "string" ){
-	im = JS9.getImage(wcsim);
-	if( im ){
-	    // it was an image name, so change wcsim to the image handle
-	    wcsim = im;
-	} else {
-	    JS9.error("unknown WCS for reproject: " + wcsim);
-	}
-    }
-    // don't reproject myself (useful in supermenu support)
-    if( this === wcsim ){
-	return;
-    }
-    // save this routine so it can be reconstituted in a restored session
-    // (unless another xxxData routine is calling us)
-    if( !opts || !opts.rawid ){
-	this.xeqStash("reprojectData", Array.prototype.slice.call(arguments));
-    }
-    // could take a while ...
-    JS9.waiting(true, this.display);
-    // ... start a timeout to allow the wait spinner to get started
-    window.setTimeout(function(){
-	var twcs = {};
-	var rcomplete = false;
-	var awvfile, awvfile2, wvfile, owvfile;
-	var wcsheader, wcsstr, oheader, nheader;
-	var arr, ivfile, ovfile, rstr, key, topts;
-	var tab, tx1, tx2, ty1, ty2, s;
-	var n, avfile, earr, cmdswitches;
-	var reprojHandler;
-	var wcsexp = /SIMPLE|BITPIX|NAXIS|NAXIS[1-4]|AMDX|AMDY|CD[1-2]_[1-2]|CDELT[1-4]|CNPIX[1-4]|CO1_[1-9][0-9]|CO2_[1-9][0-9]|CROTA[1-4]|CRPIX[1-4]|CRVAL[1-4]|CTYPE[1-4]|CUNIT[1-4]|DATE|DATE_OBS|DC-FLAG|DEC|DETSEC|DETSIZE|EPOCH|EQUINOX|EQUINOX[a-z]|IMAGEH|IMAGEW|LATPOLE|LONGPOLE|MJD-OBS|PC00[1-4]00[1-4]|PC[1-4]_[1-4]|PIXSCALE|PIXSCAL[1-2]|PLTDECH|PLTDECM|PLTDECS|PLTDECSN|PLTRAH|PLTRAM|PLTRAS|PPO|PROJP[1-9]|PROJR0|PV[1-3]_[1-3]|PV[1-4]_[1-4]|RA|RADECSYS|SECPIX|SECPIX|SECPIX[1-2]|UT|UTMID|VELOCITY|VSOURCE|WCSAXES|WCSDEP|WCSDIM|WCSNAME|XPIXSIZE|YPIXSIZE|ZSOURCE|LTM|LTV/;
-	var ptypeexp = /TAN|SIN|ZEA|STG|ARC/;
-	var defaultReprojHandler = function(hdu){
-	    topts = topts || {};
-	    topts.refreshRegions = true;
-	    topts.resetSection = true;
-	    that.refreshImage(hdu, topts);
-	};
-	// opts can be an object or json
-	if( typeof opts === "string" ){
-	    try{ opts = JSON.parse(opts); }
-	    catch(e){ JS9.error("can't parse reproject opts: " + opts, e); }
-	}
-	// opts is optional
-	opts = opts || {};
-	// handler
-	reprojHandler = opts.reprojHandler || defaultReprojHandler;
-	// make copy of input header, removing wcs keywords
-	oheader = $.extend(true, {}, that.raw.header);
-	for(key in oheader){
-	    if( oheader.hasOwnProperty(key) ){
-		if( wcsexp.test(key) ){
-		    delete oheader[key];
-		}
+    // opts is optional
+    opts = opts || {};
+    // make copy of input header, removing wcs keywords
+    oheader = $.extend(true, {}, this.raw.header);
+    for(key in oheader){
+	if( oheader.hasOwnProperty(key) ){
+	    if( wcsexp.test(key) ){
+		delete oheader[key];
 	    }
 	}
+    }
+    if( typeof wcsim === "object" ){
 	// get wcs keywords from new header
 	if( wcsim.raw && wcsim.raw.header ){
 	    nheader = wcsim.raw.header;
@@ -6078,159 +6461,232 @@ JS9.Image.prototype.reprojectData = function(wcsim, opts){
 	wcsheader = $.extend(true, {}, twcs, oheader);
 	// sanity check on result
 	if( !wcsheader.NAXIS || !wcsheader.NAXIS1 || !wcsheader.NAXIS2 ){
-	    JS9.error("invalid FITS image header");
-	}
-	// keep within the limits of current memory constraints
-	if((wcsheader.NAXIS1*wcsheader.NAXIS2) > (JS9.REPROJDIM*JS9.REPROJDIM)){
-	    JS9.error("for now, the max image size for reprojection is approximately " + JS9.REPROJDIM  + " * " + JS9.REPROJDIM);
+	    // JS9.error("invalid FITS image header");
+	    return;
 	}
 	// convert reprojection header to a string
-	wcsstr = JS9.raw2FITS(wcsheader, true);
+	wcsstr = JS9.raw2FITS(wcsheader, {addcr: true});
 	// create vfile text file containing reprojection WCS
 	wvfile = "wcs_" + JS9.uniqueID() + ".txt";
 	JS9.vfile(wvfile, wcsstr);
-	// check input and reproj WCS to make sure we can run fast mProjectPP
-	// if not, try to make an alternate WCS header amenable to mProjectPP
-	try{
-	    // try to change input WCS to a sys usable by mProjectPP
-	    if( !ptypeexp.test(that.raw.wcsinfo.ptype) ){
-		owvfile = "owcs_" + JS9.uniqueID() + ".txt";
-		JS9.vfile(owvfile, JS9.raw2FITS(that.raw.header, true));
-		awvfile = "awcs_" + JS9.uniqueID() + ".txt";
-		rstr = JS9.tanhdr(owvfile, awvfile, "");
-		if( JS9.DEBUG > 1 ){
-		    JS9.log("tanhdr (input): %s %s -> %s",
-			    owvfile, awvfile, rstr);
-		}
-		JS9.vunlink(owvfile);
+	// keep within the limits of current memory constraints, or die
+	if((wcsheader.NAXIS1*wcsheader.NAXIS2) > (JS9.REPROJDIM*JS9.REPROJDIM)){
+	    if( opts.shrink !== false ){
+		// shrink header, which will shrink the output FITS file
+		nwvfile = "shrink_" + wvfile;
+		rstr = JS9.shrinkhdr(JS9.REPROJDIM, wvfile, nwvfile);
 		if( rstr.search(/\[struct stat="OK"/) >= 0 ){
-		    // add command switch to use this alternate wcs
-		    opts.cmdswitches = opts.cmdswitches || "";
-		    opts.cmdswitches += (" -i " + awvfile);
+		    Astroem.vunlink(wvfile);
+		    wvfile = nwvfile;
 		}
-	    }
-	    // try to change reproject WCS to a sys usable by mProjectPP
-	    if( (wcsim.raw && !ptypeexp.test(wcsim.raw.wcsinfo.ptype)) ||
-		(wcsim.ptype && !ptypeexp.test(wcsim.ptype))           ){
-		owvfile = "owcs_" + JS9.uniqueID() + ".txt";
-		JS9.vfile(owvfile, JS9.raw2FITS(nheader, true));
-		awvfile2 = "awcs_" + JS9.uniqueID() + ".txt";
-		rstr = JS9.tanhdr(owvfile, awvfile2, "");
-		if( JS9.DEBUG > 1 ){
-		    JS9.log("tanhdr (reproj): %s %s -> %s",
-			    owvfile, awvfile2, rstr);
-		}
-		JS9.vunlink(owvfile);
-		if( rstr.search(/\[struct stat="OK"/) >= 0 ){
-		    // delete old wcs file and use this alternate wcsfile
-		    JS9.vunlink(wvfile);
-		    wvfile = awvfile2;
-		}
+	    } else {
+		JS9.error("without allowing shrinking, the max image size for wcs reprojection is " + JS9.REPROJDIM  + " * " + JS9.REPROJDIM);
 	    }
 	}
-	catch(ignore){}
-	// get reference to existing raw data file (or create one)
-	if( that.raw.hdu && that.raw.hdu.fits.vfile ){
-	    // input file name
-	    ivfile = that.raw.hdu.fits.vfile;
-	    // add extension name or number
-	    if( that.raw.hdu.fits.extname ){
-		ivfile += sprintf("[%s]", that.raw.hdu.fits.extname);
-	    } else if( that.raw.hdu.fits.extnum &&
-		       (that.raw.hdu.fits.extnum > 0) ){
-		ivfile += sprintf("[%s]", that.raw.hdu.fits.extnum);
-	    }
-
-	} else {
-	    // input file name
-	    arr = that.toArray();
-	    ivfile = that.id.replace(/\.png$/, "_png" +  ".fits");
-	    JS9.vfile(ivfile, arr);
-	}
-	// output file name
-	s = that.id
-	    .replace(/\[.*\]/, "")
-	    .replace(/\.png$/, ".fits")
-	    .replace(/\.gz$/, "");
-	ovfile = "reproj_" + JS9.uniqueID() + "_" + s;
-	// for tables, we probably have to bin it by adding a bin specification
-	// also need to pass the HDU name. For now, "EVENTS" is all we know ...
-	if( that.imtab === "table" ){
-	    if( !ivfile.match(/\[bin /) ){
-		if( !ivfile.match(/\[EVENTS\]/) ){
-		    ivfile += "[EVENTS]";
-		}
-		tab = that.raw.hdu.table;
-		tx1 = Math.floor(tab.xcen - (tab.xdim/2) + 1);
-		tx2 = Math.floor(tab.xcen + (tab.xdim/2));
-		ty1 = Math.floor(tab.ycen - (tab.ydim/2) + 1);
-		ty2 = Math.floor(tab.ycen + (tab.ydim/2));
-		ivfile += sprintf("[bin X=%s:%s,Y=%s:%s]", tx1, tx2, ty1, ty2);
-	    }
-	}
-	// call the reproject routine
-	try{
-	    // name of (unneeded) area file
-	    n = ovfile.lastIndexOf(".");
-	    if( n >= 0 ) {
-		avfile = ovfile.substring(0, n) + "_area" + ovfile.substring(n);
-	    }
-	    // optional command line args
-	    cmdswitches = opts.cmdswitches || "";
-	    // call reproject
-	    rstr = JS9.reproject(ivfile, ovfile, wvfile, cmdswitches);
+    } else {
+	wvfile = wcsim;
+    }
+    // check input and reproj WCS to make sure we can run fast mProjectPP
+    // if not, try to make an alternate WCS header amenable to mProjectPP
+    try{
+	// try to change input WCS to a sys usable by mProjectPP
+	if( !ptypeexp.test(this.raw.wcsinfo.ptype) ){
+	    owvfile = "owcs_" + JS9.uniqueID() + ".txt";
+	    JS9.vfile(owvfile, JS9.raw2FITS(this.raw.header, {addcr: true}));
+	    awvfile = "awcs_" + JS9.uniqueID() + ".txt";
+	    rstr = JS9.tanhdr(owvfile, awvfile, "");
 	    if( JS9.DEBUG > 1 ){
-		JS9.log("reproject: %s %s %s [%s] -> %s",
-			ivfile, ovfile, wvfile, cmdswitches, rstr);
+		JS9.log("tanhdr (input): %s %s -> %s",
+			owvfile, awvfile, rstr);
 	    }
+	    JS9.vunlink(owvfile);
+	    if( rstr.search(/\[struct stat="OK"/) >= 0 ){
+		// add command switch to use this alternate wcs
+		opts.cmdswitches = opts.cmdswitches || "";
+		opts.cmdswitches += (" -i " + awvfile);
+	    }
+	}
+	// try to change reproject WCS to a sys usable by mProjectPP
+	if( (wcsim.raw && !ptypeexp.test(wcsim.raw.wcsinfo.ptype)) ||
+	    (wcsim.ptype && !ptypeexp.test(wcsim.ptype))           ){
+	    owvfile = "owcs_" + JS9.uniqueID() + ".txt";
+	    JS9.vfile(owvfile, JS9.raw2FITS(nheader, {addcr: true}));
+	    awvfile2 = "awcs_" + JS9.uniqueID() + ".txt";
+	    rstr = JS9.tanhdr(owvfile, awvfile2, "");
+	    if( JS9.DEBUG > 1 ){
+		JS9.log("tanhdr (reproj): %s %s -> %s",
+			owvfile, awvfile2, rstr);
+	    }
+	    JS9.vunlink(owvfile);
+	    if( rstr.search(/\[struct stat="OK"/) >= 0 ){
+		// delete old wcs file and use this alternate wcsfile
+		JS9.vunlink(wvfile);
+		wvfile = awvfile2;
+	    }
+	}
+    }
+    catch(ignore){}
+    // get reference to existing raw data file (or create one)
+    if( this.raw.hdu && this.raw.hdu.fits.vfile ){
+	// input file name
+	ivfile = this.raw.hdu.fits.vfile;
+	// add extension name or number
+	if( this.raw.hdu.fits.extname ){
+	    ivfile += sprintf("[%s]", this.raw.hdu.fits.extname);
+	} else if( this.raw.hdu.fits.extnum &&
+		   (this.raw.hdu.fits.extnum > 0) ){
+	    ivfile += sprintf("[%s]", this.raw.hdu.fits.extnum);
+	}
+    } else {
+	// input file name
+	arr = this.toArray();
+	ivfile = this.id.replace(/\.png$/, "_png" +  ".fits");
+	JS9.vfile(ivfile, arr);
+    }
+    // output file name
+    s = this.id
+	.replace(/\[.*\]/, "")
+	.replace(/\.png$/i, ".fits")
+	.replace(/\.fz$/i, "")
+	.replace(/\.gz$/i, "");
+    ovfile = "reproj_" + JS9.uniqueID() + "_" + s;
+    // for tables, we probably have to bin it by adding a bin specification
+    // also need to pass the HDU name. For now, "EVENTS" is all we know ...
+    if( this.imtab === "table" ){
+	if( !ivfile.match(/\[bin /) ){
+	    if( !ivfile.match(/\[EVENTS\]/) ){
+		ivfile += "[EVENTS]";
+	    }
+	    tab = this.raw.hdu.table;
+	    tx1 = Math.floor(tab.xcen - (tab.xdim/2) + 1);
+	    tx2 = Math.floor(tab.xcen + (tab.xdim/2));
+	    ty1 = Math.floor(tab.ycen - (tab.ydim/2) + 1);
+	    ty2 = Math.floor(tab.ycen + (tab.ydim/2));
+	    ivfile += sprintf("[bin X=%s:%s,Y=%s:%s]", tx1, tx2, ty1, ty2);
+	}
+    }
+    // call the reproject routine
+    try{
+	// name of (unneeded) area file
+	n = ovfile.lastIndexOf(".");
+	if( n >= 0 ) {
+	    avfile = ovfile.substring(0, n) + "_area" + ovfile.substring(n);
+	}
+	// optional command line args
+	cmdswitches = opts.cmdswitches || "";
+	// call reproject
+	rstr = JS9.reproject(ivfile, ovfile, wvfile, cmdswitches);
+	if( JS9.DEBUG > 1 ){
+	    JS9.log("reproject: %s %s %s [%s] -> %s",
+		    ivfile, ovfile, wvfile, cmdswitches, rstr);
+	}
+	// delete unneeded files ...
+	JS9.vunlink(avfile);
+	JS9.vunlink(wvfile);
+	if( awvfile ){
+	    JS9.vunlink(awvfile);
+	}
+	if( arr ){
+	    JS9.vunlink(ivfile);
+	}
+	// ... then error check
+	if( rstr.search(/\[struct stat="OK"/) < 0 ){
+	    // signal this we completed the reproject attempt
+	    rcomplete = true;
+	    earr = rstr.match(/msg="(.*)"/);
+	    if( earr && earr[1] ){
+		JS9.error(earr[1] + " (from mProjectPP)");
+	    } else {
+		JS9.error(rstr);
+	    }
+	}
+    }
+    catch(e){
+	// avoid double error reporting
+	if( !rcomplete ){
 	    // delete unneeded files ...
 	    JS9.vunlink(avfile);
 	    JS9.vunlink(wvfile);
-	    if( awvfile ){
-		JS9.vunlink(awvfile);
-	    }
-	    if( arr ){
-		JS9.vunlink(ivfile);
-	    }
-	    // ... then error check
-	    if( rstr.search(/\[struct stat="OK"/) < 0 ){
-		// signal that we completed the reproject attempt
-		rcomplete = true;
-		earr = rstr.match(/msg="(.*)"/);
-		if( earr && earr[1] ){
-		    JS9.error(earr[1] + " (from mProjectPP)");
-		} else {
-		    JS9.error(rstr);
-		}
-	    }
-	}
-	catch(e){
-	    // avoid double error reporting
-	    if( !rcomplete ){
-		// delete unneeded files ...
-		JS9.vunlink(avfile);
-		JS9.vunlink(wvfile);
-		// call error handler
-		if( rstr ){
-		    JS9.error(rstr);
-		} else {
-		    JS9.error("WCS reproject failed", e);
-		}
+	    // call error handler
+	    if( rstr ){
+		JS9.error(rstr);
 	    } else {
-		return;
+		JS9.error("WCS reproject failed", e);
 	    }
+	} else {
+	    return;
 	}
-	// refresh image using the reprojected file ...
-	topts = $.extend(true, {}, JS9.fits.options, opts);
-	// ... in a new raw data layer
-	topts.rawid = topts.rawid || "reproject";
-	// save pointer to original wcs image
-	if( wcsim.raw && wcsim.raw.header ){
-	    topts.wcsim = wcsim;
+    }
+    // return output file name
+    return ovfile;
+};
+
+// high-level routine to reproject image using WCS info
+// creates a new raw data layer ("reproject")
+JS9.Image.prototype.reprojectData = function(wcsim, opts){
+    var that = this;
+    var im, ovfile;
+    // sanity checks
+    if( !wcsim || !JS9.reproject ){
+	return;
+    }
+    // is this a string containing an image name or WCS values?
+    if( typeof wcsim === "string" ){
+	im = JS9.getImage(wcsim);
+	if( im ){
+	    // it was an image name, so change wcsim to the image handle
+	    wcsim = im;
+	} else {
+	    JS9.error("unknown WCS for reproject: " + wcsim);
 	}
-	// process the FITS file
-	try{ JS9.handleFITSFile(ovfile, topts, reprojHandler); }
-	catch(e){ JS9.error("can't process reprojected FITS file", e); }
+    }
+    // don't reproject myself (useful in supermenu support)
+    if( this === wcsim ){
+	return;
+    }
+    // opts is optional
+    opts = opts || {};
+    // opts can be an object or json
+    if( typeof opts === "string" ){
+	try{ opts = JSON.parse(opts); }
+	catch(e){ JS9.error("can't parse reproject opts: " + opts, e); }
+    }
+    // save this routine so it can be reconstituted in a restored session
+    // (unless another xxxData routine is calling us)
+    if( !opts.rawid ){
+	this.xeqStash("reprojectData", Array.prototype.slice.call(arguments));
+    }
+    // could take a while ...
+    JS9.waiting(true, this.display);
+    // ... start a timeout to allow the wait spinner to get started
+    window.setTimeout(function(){
+	var topts;
+	var reprojHandler;
+	var defaultReprojHandler = function(hdu){
+	    topts = topts || {};
+	    topts.refreshRegions = true;
+	    topts.resetSection = true;
+	    that.refreshImage(hdu, topts);
+	};
+	// opts is optional
+	opts = opts || {};
+	// handler
+	reprojHandler = opts.reprojHandler || defaultReprojHandler;
+	// call the low-level reproject routine, returning reprojected file
+	ovfile = that.reproject(wcsim, opts);
+	if( ovfile ){
+	    // refresh image using the reprojected file ...
+	    topts = $.extend(true, {}, JS9.fits.options, opts);
+	    // ... in a new raw data layer
+	    topts.rawid = topts.rawid || "reproject";
+	    // save pointer to original wcs image
+	    if( wcsim.raw && wcsim.raw.header ){
+		topts.wcsim = wcsim;
+	    }
+	    // process the FITS file
+	    try{ JS9.handleFITSFile(ovfile, topts, reprojHandler); }
+	    catch(e){ JS9.error("can't process reprojected FITS file", e); }
+	}
     }, JS9.SPINOUT);
     // allow chaining
     return this;
@@ -6310,7 +6766,7 @@ JS9.Image.prototype.moveToDisplay = function(dname){
 	for( key in ndisplay.layers ){
 	    if( ndisplay.layers.hasOwnProperty(key) ){
 		if( ndisplay.layers[key].dtype === "main" ){
-		    ndisplay.image.showShapeLayer(key, false);
+		    ndisplay.image.showShapeLayer(key, false, {local: true});
 		}
 	    }
 	}
@@ -6322,7 +6778,7 @@ JS9.Image.prototype.moveToDisplay = function(dname){
 	    layer = this.layers[key];
 	    dlayer = ndisplay.layers[key];
 	    if( dlayer ){
-		this.showShapeLayer(key, false);
+		this.showShapeLayer(key, false, {local: true});
                 layer.dlayer = dlayer;
                 layer.divjq = dlayer.divjq;
                 layer.canvasjq = dlayer.canvasjq;
@@ -6343,7 +6799,7 @@ JS9.Image.prototype.moveToDisplay = function(dname){
     // show shape layers in new display
     for( key in this.layers ){
 	if( this.layers.hasOwnProperty(key) ){
-	    this.showShapeLayer(key, true);
+	    this.showShapeLayer(key, true, {local: true});
 	}
     }
     // ensure proper positions for graphics
@@ -6523,8 +6979,8 @@ JS9.Image.prototype.xeqPlugins = function(xtype, xname, xval){
         var s = "JS9:" + name;
         $(document).trigger(s, obj);
     };
-    // sanity check
-    if( !xtype || !xname ){
+    // sanity checks
+    if( !xtype || !xname || !JS9.globalOpts.xeqPlugins ){
 	return;
     }
     // array of plugin instances
@@ -6533,8 +6989,8 @@ JS9.Image.prototype.xeqPlugins = function(xtype, xname, xval){
     for( pname in parr ){
 	if( parr.hasOwnProperty(pname) ){
 	    pinst = parr[pname];
-	    if( pinst.isActive(xname) ){
-		popts = pinst.plugin.opts;
+	    popts = pinst.plugin.opts;
+	    if( pinst.isActive(xname) && typeof popts[xname] === "function" ){
 		switch(xtype){
 		case "image":
 		    // used for: onimage[load,close,refresh,display]
@@ -6596,8 +7052,9 @@ JS9.Image.prototype.uploadFITSFile = function(){
 	    // set FITS filename and proxy filename
 	    that.fitsFile = r.stdout.trim();
 	    that.proxyFile = that.fitsFile;
-	    if( !that.fitsFile.match(/^\${JS9_DIR}/) &&
-		that.fitsFile.charAt(0) !== "/" ){
+	    if( JS9.globalOpts.prependJS9Dir         &&
+		!that.fitsFile.match(/^\${JS9_DIR}/) &&
+		that.fitsFile.charAt(0) !== "/"      ){
 		that.fitsFile = "${JS9_DIR}/" + that.fitsFile;
 	    }
 	    // re-query for analysis
@@ -6624,7 +7081,7 @@ JS9.Image.prototype.uploadFITSFile = function(){
 	if( robj.stderr || robj.errcode ){
 	    JS9.error(robj.stderr || "from quotacheck: " + robj.errcode);
 	}
-	vdata = JS9.vfile(vfile);
+	vdata = JS9.vread(vfile, "binary");
 	JS9.worker.socketio(function(){
 	    JS9.progress(true, that.display);
 	    JS9.worker.postMessage("uploadFITS",
@@ -6678,1048 +7135,6 @@ JS9.Image.prototype.removeProxyFile = function(s){
     }
     // ask to remove proxy file, and process result
     JS9.Send('removeproxy', {'cmd': 'js9Xeq removeproxy ' + file}, func);
-};
-
-// dummy routines to display/clear message, overwritten in info plugin
-// eslint-disable-next-line no-unused-vars
-// Colormap
-JS9.Colormap = function(name, a1, a2, a3){
-    this.name = name;
-    switch(arguments.length){
-    case 2:
-	this.type = "lut";
-	this.colors = a1;
-	break;
-    case 4:
-	this.type = "sao";
-	this.vertices = [a1, a2, a3];
-	break;
-    default:
-	JS9.error("colormap requires a colormap name and 1 or 3 array args");
-    }
-    // add to list of colormaps
-    JS9.colormaps.push(this);
-    // debugging
-    if( JS9.DEBUG > 1 ){
-	JS9.log("JS9 colormap:  %s", this.name);
-    }
-};
-
-JS9.Colormap.prototype.mkColorCell = function(ii){
-    var m;
-    var count = JS9.COLORSIZE;
-    var umax = 255;
-    var rgb = [0, 0, 0];
-    var x, i, j, val, vertex, len;
-    var size, index;
-    switch(this.type){
-    // from: tksao1.0/colormap/sao.C
-    case "sao":
-	x = ii / count;
-	// for each of red, green, blue ...
-	for(j=0; j<3; j++){
-	    // look for the first vertex with x value larger than our x value
-	    vertex = this.vertices[j];
-	    len = vertex.length;
-	    for(i=0; i<len; i++){
-		if( vertex[i][0] > x ){
-		    break;
-		}
-	    }
-	    // if first vertex x value is greater than ours, use it
-	    if( i === 0 ){
-		val = vertex[0][1];
-	    // if last vertex xvalue is less than ours, use it
-	    } else if( i === len ){
-		val = vertex[len-1][1];
-	    // interpolate between two vertices
-	    } else {
-		m = (vertex[i][1] - vertex[i-1][1]) /
-		    (vertex[i][0] - vertex[i-1][0]);
-		if( m ){
-		    // point slope form
-		    val = m * (x - vertex[i-1][0]) + vertex[i-1][1];
-		} else {
-		    val = vertex[i][1];
-		}
-	    }
-	    // assign value to the correct color in the result array
-	    rgb[j] = val * umax;
-	}
-	break;
-    // from: tksao1.0/colormap/lut.C
-    case "lut":
-	size = this.colors.length;
-	// index into the evenly spaced RGB values
-	index = Math.floor(ii*size/count);
-	if( index < 0 ){
-	    rgb[0] = this.colors[0][0] * umax;
-	    rgb[1] = this.colors[0][1] * umax;
-	    rgb[2] = this.colors[0][2] * umax;
-	} else if( index < size ){
-	    rgb[0] = this.colors[index][0] * umax;
-	    rgb[1] = this.colors[index][1] * umax;
-	    rgb[2] = this.colors[index][2] * umax;
-	} else {
-	    rgb[0] = this.colors[size-1][0] * umax;
-	    rgb[1] = this.colors[size-1][1] * umax;
-	    rgb[2] = this.colors[size-1][2] * umax;
-	}
-	break;
-    default:
-	JS9.error("unknown colormap type");
-    }
-    // return the news
-    return rgb;
-};
-
-// ---------------------------------------------------------------------
-// JS9 display object for the screen display
-// ---------------------------------------------------------------------
-JS9.Display = function(el){
-    var that = this;
-    // pass jQuery element, DOM element, or id
-    if( el instanceof jQuery ){
-	this.divjq = el;
-    } else if( typeof el === "object" ){
-	this.divjq = $(el);
-    } else {
-	this.divjq = $("#"+el);
-    }
-    // make sure div has some id
-    if( !this.divjq.attr("id") ){
-	this.divjq.attr("id", JS9.DEFID);
-    }
-    // save id
-    this.id = this.divjq.attr("id");
-    // display-specific scratch space
-    this.tmp = {};
-    // add class
-    this.divjq.addClass("JS9");
-    // set width and height on div
-    this.width = this.divjq.attr("data-width");
-    if( !this.width  ){
-	this.width  = JS9.WIDTH;
-    }
-    this.divjq.css("width", this.width);
-    this.width = parseInt(this.divjq.css("width"), 10);
-    this.height = this.divjq.attr("data-height");
-    if( !this.height ){
-	this.height = JS9.HEIGHT;
-    }
-    this.divjq.css("height", this.height);
-    this.height = parseInt(this.divjq.css("height"), 10);
-    // save original width and height
-    this.width0 = this.width;
-    this.height0 = this.height;
-    // create DOM canvas element
-    this.canvas = document.createElement("canvas");
-    // jquery version for event handling and DOM manipulation
-    this.canvasjq = $(this.canvas)
-	.addClass("JS9Image")
-	.attr("id", this.id+"Image")
-	.attr("width", this.width)
-	.attr("height", this.height)
-	.css("z-index", JS9.ZINDEX);
-    // add container to the high-level div
-    this.displayConjq = $("<div>")
-	.addClass("JS9Container")
-	.css("z-index", JS9.ZINDEX)
-	.attr("tabindex", "0")
-	.append(this.canvasjq)
-	.appendTo(this.divjq);
-    // add resize capability, if necessary
-    if( JS9.globalOpts.resizeHandle && window.hasOwnProperty("ResizeSensor") ){
-	this.divjq
-	    .css("resize", "both")
-	    .css("overflow", "hidden");
-	if( JS9.bugs.webkit_resize ){
-	    this.owidth = parseInt(this.divjq.css("width"), 10);
-	    this.oheight = parseInt(this.divjq.css("height"), 10);
-	    this.divjq
-		.css("width",  this.width + JS9.RESIZEFUDGE)
-		.css("height", this.height + JS9.RESIZEFUDGE);
-	}
-	this.resizeSensor = new ResizeSensor(this.divjq, function(){
-	    var nwidth = that.divjq.width();
-	    var nheight = that.divjq.height();
-	    if( JS9.bugs.webkit_resize ){
-		nwidth  -= JS9.RESIZEFUDGE;
-		nheight -= JS9.RESIZEFUDGE;
-	    }
-	    that.resize(nwidth, nheight);
-	});
-    }
-    // drawing context
-    this.context = this.canvas.getContext("2d");
-    // turn off anti-aliasing
-    if( !JS9.ANTIALIAS ){
-	this.context.imageSmoothingEnabled = false;
-	this.context.webkitImageSmoothingEnabled = false;
-	this.context.msImageSmoothingEnabled = false;
-    }
-    // add the display tooltip
-    this.tooltip = $("<div>")
-	.attr("id", "tooltip_" + this.id)
-	.addClass("JS9Tooltip")
-	.appendTo(this.divjq);
-    // no image loaded into this canvas
-    this.image = null;
-    // no plugin instances yet
-    this.pluginInstances = {};
-    // no layers yet
-    this.layers = {};
-    // init message layer
-    this.initMessages();
-    // blend mode is false to start
-    this.blendMode = false;
-    // display-based mouse/touch actions initially from global
-    this.mouseActions = JS9.globalOpts.mouseActions.slice(0);
-    this.touchActions = JS9.globalOpts.touchActions.slice(0);
-    this.keyboardActions = $.extend(true, {}, JS9.globalOpts.keyboardActions);
-    // display-based scroll-based zoom initially from global
-    this.mousetouchZoom = JS9.globalOpts.mousetouchZoom;
-    // add event handlers
-    this.divjq.on("mouseover", this, function(evt){
-	return JS9.mouseOverCB(evt);
-    });
-    this.divjq.on("mousedown touchstart", this, function(evt){
-	return JS9.mouseDownCB(evt);
-    });
-    this.divjq.on("mousemove touchmove", this, function(evt){
-	return JS9.mouseMoveCB(evt);
-    });
-    this.divjq.on("mouseup touchend", this, function(evt){
-	return JS9.mouseUpCB(evt);
-    });
-    this.divjq.on("mouseout", this, function(evt){
-	return JS9.mouseOutCB(evt);
-    });
-    this.divjq.on("keypress", this, function(evt){
-	return JS9.keyPressCB(evt);
-    });
-    this.divjq.on("keydown", this, function(evt){
-	return JS9.keyDownCB(evt);
-    });
-    this.divjq.on("wheel", this, function(evt){
-	return JS9.wheelCB(evt);
-    });
-    // set up drag and drop, if available
-    this.divjq.on("dragenter", this, function(evt){
-	return JS9.dragenterCB(this.id, evt);
-    });
-    this.divjq.on("dragover", this, function(evt){
-	return JS9.dragoverCB(this.id, evt);
-    });
-    this.divjq.on("dragexit", this, function(evt){
-	return JS9.dragexitCB(this.id, evt);
-    });
-    this.divjq.on("drop", this, function(evt){
-	return JS9.dragdropCB(this.id, evt);
-    });
-    // no context menus on the display
-    this.divjq.on("contextmenu", this, function(){
-	return false;
-    });
-    // add local file open support
-    this.addFileDialog("Load", JS9.globalOpts.imageTemplates);
-    this.addFileDialog("RefreshImage", JS9.globalOpts.imageTemplates);
-    this.addFileDialog("LoadRegions", JS9.globalOpts.regionTemplates);
-    this.addFileDialog("LoadSession", JS9.globalOpts.sessionTemplates);
-    this.addFileDialog("LoadColormap", JS9.globalOpts.colormapTemplates);
-    this.addFileDialog("LoadCatalog", JS9.globalOpts.catalogTemplates);
-    // add to list of displays
-    JS9.displays.push(this);
-    // debugging
-    if( JS9.DEBUG ){
-	JS9.log("JS9 display:  %s", this.id);
-    }
-};
-
-// add support for file dialog box that executes JS9 routine on file blobs
-JS9.Display.prototype.addFileDialog = function(funcName, template){
-    var that = this;
-    var jdiv, jinput, id;
-    // sanity check
-    if( !funcName || !JS9.publics[funcName] ){
-	return;
-    }
-    id = "openLocal" + funcName + "-" + that.id;
-    // outer div
-    // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/file
-    // recommends opacity over visibility, but it breaks the menubar in ios
-    jdiv = $("<div>")
-	.css("visibility", "hidden")
-	.css("position", "relative")
-	.css("top", -50)
-	.css("left", -50)
-	.appendTo(that.divjq);
-    // inner file input element
-    jinput = $("<input>")
-	.attr("type", "file")
-	.attr("id", id)
-	.attr("multiple", true)
-	.appendTo(jdiv);
-    // add accept template, if possible
-    if( template ){
-	jinput.attr("accept", template);
-    }
-    // add callback for when input changes
-    jinput.on("change", function(){
-	var i;
-	for(i=0; i<this.files.length; i++){
-	    // execute a JS9 public access routine
-	    JS9.publics[funcName](this.files[i], {display: that.id});
-	}
-	this.value = null;
-	return false;
-    });
-};
-
-// initialize message layers
-JS9.Display.prototype.initMessages = function(){
-    this.messageContainer = $("<div>")
-	.addClass("JS9Container")
-        .css("z-index", JS9.MESSZINDEX)
-	.appendTo(this.divjq);
-    this.infoArea = $("<div>")
-	.addClass("JS9Message")
-	.appendTo(this.messageContainer);
-    this.regionsArea = $("<div>")
-	.addClass("JS9Message")
-	.appendTo(this.messageContainer);
-    this.progressArea = $("<div>")
-	.addClass("JS9Progress")
-	.addClass("JS9Message")
-	.appendTo(this.messageContainer);
-    this.progressBar = $("<progress>")
-	.addClass("JS9ProgressBar")
-	.attr("value", 0)
-	.attr("max", 100)
-	.attr("name", "progress")
-	.appendTo(this.progressArea);
-    // make it draggable, if possible
-    try{
-	this.messageContainer.draggable({
-	    // eslint-disable-next-line no-unused-vars
-	    start: function(event, ui){
-		this.oicb = JS9.globalOpts.internalContrastBias;
-		JS9.globalOpts.internalContrastBias = false;
-	    },
-	    // eslint-disable-next-line no-unused-vars
-	    stop: function(event, ui){
-		JS9.globalOpts.internalContrastBias = this.oicb;
-	    }
-	});
-    }
-    catch(ignore){}
-    // allow chaining
-    return this;
-};
-
-//  display a plugin in a light window or a new window
-JS9.Display.prototype.displayPlugin = function(plugin){
-    var that = this;
-    var a, name, did, oid, iid, odiv, pdiv, pinst, win, w, h, r, s, title;
-    pinst = this.pluginInstances[plugin.name];
-    // some day we want to support light windows and new (external) windows
-    switch(JS9.globalOpts.winType){
-    case "light":
-	a = JS9.lightOpts[JS9.LIGHTWIN];
-	if( !pinst || !pinst.status ){
-	    // no spaces in an id
-	    name = plugin.name.replace(/\s/g, "_");
-	    // convenience ids
-	    did = this.id + "_" + name + "_lightDiv";
-	    oid = this.id + "_" + name + "_outerDiv";
-	    iid = this.id + "_" + name + "_innerDiv";
-	    // set up a new light instance, if necessary
-	    if( !pinst ){
-		odiv = $("<div>")
-		    .attr("id", oid)
-		    .css("display", "none")
-		    .appendTo($(this.divjq));
-		$("<div>")
-		    .addClass(plugin.name)
-		    .attr("id", iid)
-		    .attr("data-js9id", this.divjq.attr("id"))
-		    .css("height", "100%")
-		    .css("width", "100%")
-		    .appendTo(odiv);
-	    }
-	    // window not created: create and show it
-	    // create the window
-	    w = plugin.opts.winDims[0] || JS9.WIDTH;
-	    h = plugin.opts.winDims[1] || JS9.HEIGHT;
-	    if( plugin.opts.winResize ){
-		r = "1";
-	    } else {
-		r = "0";
-	    }
-	    // light window param string
-	    s = sprintf(a.format, w, h, r);
-	    // add the title, if explicitly called for and if not already added
-	    if( plugin.opts.toolbarHTML &&
-		plugin.opts.toolbarHTML.search(/\$title/) >= 0 ){
-		title = "";
-	    } else {
-		title = plugin.opts.winTitle || "";
-	    }
-	    // add display to title
-	    title += sprintf(JS9.IDFMT, this.id);
-	    // create the light window
-	    win = JS9.lightWin(did, "div", oid, title, s);
-	    // find inner div in the light window
-	    pdiv = $("#" + did + " #" + iid);
-	    // create the plugin inside the inner div
-	    pinst = JS9.instantiatePlugin(pdiv, plugin, win);
-	    pinst.winHandle.onclose = function(){
-		// just hide the window
-		pinst.winHandle.hide();
-		pinst.status = "inactive";
-		if( plugin.opts.onpluginclose ){
-		    try{
-			plugin.opts.onpluginclose.call(pinst, that.image);
-		    }
-		    catch(e){
-			JS9.log("onplugincloseCB: %s [%s]\n%s",
-				plugin.name, e.message, JS9.strace(e));
-		    }
-		}
-		return false;
-	    };
-	    pinst.status = "active";
-	    if( plugin.opts.onplugindisplay ){
-		try{
-		    plugin.opts.onplugindisplay.call(pinst, this.image);
-		}
-		catch(e){
-		    JS9.log("onplugindisplayCB: %s [%s]\n%s",
-			    plugin.name, e.message, JS9.strace(e));
-		}
-	    }
-	} else if( pinst.status === "inactive" ){
-	    // window created but hidden: show it
-	    if( pinst.winHandle ){
-		pinst.winHandle.show();
-		pinst.status = "active";
-		if( plugin.opts.onplugindisplay ){
-		    try{
-			plugin.opts.onplugindisplay.call(pinst, this.image);
-		    }
-		    catch(e){
-			JS9.log("onplugindisplayCB: %s [%s]\n%s",
-				plugin.name, e.message, JS9.strace(e));
-		    }
-		}
-	    }
-	} else if( pinst.status === "active" ){
-	    // window created and showing: hide it
-	    if( pinst.winHandle ){
-		pinst.winHandle.hide();
-		pinst.status = "inactive";
-		if( plugin.opts.onpluginclose ){
-		    try{
-			plugin.opts.onpluginclose.call(pinst, that.image);
-		    }
-		    catch(e){
-			JS9.log("onplugincloseCB: %s [%s]\n%s",
-				plugin.name, e.message, JS9.strace(e));
-		    }
-		}
-	    }
-	}
-	break;
-    case "new":
-	JS9.error("external window support for plugins not yet implemented");
-	break;
-    }
-};
-
-//  resize a display
-JS9.Display.prototype.resize = function(width, height, opts){
-    var i, div, im, key, layer, nwidth, nheight, nleft, ntop, pinst;
-    var repos = function(o){
-	o.left += nleft;
-	o.top  += ntop;
-	o.setCoords();
-    };
-    // sanity checks
-    if( !JS9.globalOpts.resize ){
-	JS9.error("display resize not enabled");
-    }
-    // no args => return current size
-    if( !width && !height ){
-	return {width: this.width, height: this.height};
-    }
-    // 'full' or 'reset' or 'image'
-    if( width === "full" ){
-	opts = height;
-	if( window.innerWidth ){
-	    width = window.innerWidth;
-	}
-	if( window.innerHeight ){
-	    // including menubar, if available
-	    height = window.innerHeight;
-	    // divs we take into account when centering
-	    for(i=0; i<JS9.globalOpts.centerDivs.length; i++){
-		div = JS9.globalOpts.centerDivs[i];
-		if( this.pluginInstances[div] ){
-		    height -= this.pluginInstances[div].divjq.height();
-		}
-	    }
-	}
-    } else if( width === "image" ){
-	if( !this.image ){
-	    JS9.error("can't resize display to 'image' without an image");
-	}
-	opts = height;
-	width = this.image.raw.width;
-	height = this.image.raw.height;
-    } else if( width === "reset" ){
-	opts = height;
-	width = this.width0 || width;
-	height = this.height0 || height;
-    }
-    // get width and height params
-    width = Math.floor(width);
-    if( height ){
-	height = Math.floor(height);
-    } else {
-	height = width;
-    }
-    // sanity checks
-    if( (width < 10) || (height < 10) ){
-	JS9.error("invalid dimension(s) passed to display resize");
-    }
-    // nothing to do if we are not changing size
-    if( (width === this.width) && (height === this.height) ){
-	return this;
-    }
-    opts = opts || {};
-    // get resize parameters relative to current display
-    nwidth = width;
-    nheight = height;
-    nleft = (nwidth - this.width) / 2;
-    ntop = (nheight - this.height) / 2;
-    // change display parameters
-    this.width = nwidth;
-    this.height = nheight;
-    this.divjq.css("width", nwidth);
-    this.divjq.css("height", nheight);
-    this.canvasjq.attr("width", nwidth);
-    this.canvasjq.attr("height", nheight);
-    if( JS9.bugs.webkit_resize ){
-	if( !this.resizing ){
-	    this.owidth = Math.min(this.owidth, nwidth);
-	    this.oheight = Math.min(this.oheight, nheight);
-	}
-    }
-    // change the menubar width, unless explicitly told not to
-    if( opts.resizeMenubar === undefined || opts.resizeMenubar ){
-	pinst = this.pluginInstances.JS9Menubar;
-	if( pinst ){
-	    $("#" + this.id + "Menubar").css("width", nwidth);
-	}
-    }
-    // change the toolbar width, unless explicitly told not to
-    if( opts.resizeToolbar === undefined || opts.resizeToolbar ){
-	pinst = this.pluginInstances.JS9Toolbar;
-	if( pinst ){
-	    // set new value for width
-	    pinst.divjq.attr("data-width", String(nwidth)+"px");
-	    // re-init toolbar for this size
-	    JS9.Toolbar.init.call(pinst);
-	}
-    }
-    // change the colorbar width, unless explicitly told not to
-    if( opts.resizeColorbar === undefined || opts.resizeColorbar ){
-	pinst = this.pluginInstances.JS9Colorbar;
-	if( pinst ){
-	    // set new value for width
-	    pinst.divjq.attr("data-width", String(nwidth)+"px");
-	    // re-init colorbar for this size
-	    JS9.Colorbar.init.call(pinst);
-	}
-    }
-    // change size of shape canvases
-    for(key in this.layers ){
-	if( this.layers.hasOwnProperty(key) ){
-	    layer = this.layers[key];
-	    if( layer.dtype === "main" ){
-		layer.divjq.css("width", nwidth);
-		layer.divjq.css("height", nheight);
-		layer.canvasjq.attr("width", nwidth);
-		layer.canvasjq.attr("height", nheight);
-		layer.canvas.setWidth(nwidth);
-		layer.canvas.setHeight(nheight);
-		layer.canvas.calcOffset();
-	    }
-	}
-    }
-    // change position of shapes on currently displayed layers
-    // save resize parameters for undisplayed layers
-    for(i=0; i<JS9.images.length; i++){
-	im = JS9.images[i];
-	im.mkSection();
-	if( im.display && (this === im.display) ){
-	    // save or update resize object
-	    if( im.resize ){
-		im.resize.left += nleft;
-		im.resize.top  += ntop;
-	    } else {
-		im.resize = {left: nleft, top: ntop};
-	    }
-	    // current image: change object positions in displayed layers
-	    if( im === im.display.image ){
-		for( key in im.layers ){
-		    if( im.layers.hasOwnProperty(key) ){
-			layer = im.layers[key];
-			if( layer.dlayer.type === "main" && !layer.json ){
-			    layer.canvas.getObjects().forEach(repos);
-			    layer.canvas.renderAll();
-			}
-		    }
-		}
-	    }
-	}
-    }
-    if( JS9.bugs.webkit_resize ){
-	this.divjq
-	    .css("width",  this.width  + JS9.RESIZEFUDGE)
-	    .css("height", this.height + JS9.RESIZEFUDGE);
-    }
-    // redisplay current image, if necessary
-    if( this.image && (JS9.globalOpts.resizeRedisplay || !this.resizing) ){
-	this.image.displayImage("all", opts);
-	this.image.refreshLayers();
-    }
-    // center, if necessary
-    if( opts.center ){
-	this.center();
-    }
-    return this;
-};
-
-// are we in the resize handle area of this display?
-JS9.Display.prototype.inResize = function(pos){
-    if( JS9.globalOpts.resizeHandle ){
-	if( (pos.x + JS9.RESIZEDIST >= this.divjq.width())  &&
-	    (pos.y + JS9.RESIZEDIST >= this.divjq.height()) ){
-	    return true;
-	}
-    }
-    return false;
-};
-
-// scroll the display to the center of the viewport
-// http://stackoverflow.com/questions/18150090/jquery-scroll-element-to-the-middle-of-the-screen-instead-of-to-the-top-with-a
-JS9.Display.prototype.center = function(){
-    var i, div, tel;
-    var el = this.divjq;
-    var voffset, hoffset;
-    var elVOffset = el.offset().top;
-    var elHeight = el.height();
-    var windowHeight = $(window).height();
-    var elHOffset = el.offset().left;
-    var elWidth = el.width();
-    var windowWidth = $(window).width();
-    var speed = 250;
-    // divs we take into account when getting total height
-    for(i=0; i<JS9.globalOpts.centerDivs.length; i++){
-	div = JS9.globalOpts.centerDivs[i];
-	if( this.pluginInstances[div] ){
-	    tel = this.pluginInstances[div].divjq;
-	    elHeight += tel.height();
-	    elVOffset = Math.min(tel.offset().top, elVOffset);
-	}
-    }
-    if (elHeight < windowHeight) {
-	voffset = elVOffset - ((windowHeight / 2) - (elHeight / 2));
-    }
-    else {
-	voffset = elVOffset;
-    }
-    if (elWidth < windowWidth) {
-	hoffset = elHOffset - ((windowWidth / 2) - (elWidth / 2));
-    }
-    else {
-	hoffset = elHOffset;
-    }
-    $('html, body').animate({scrollTop: voffset, scrollLeft: hoffset}, speed);
-    // allow chaining
-    return this;
-};
-
-// gather images from other displays into this display
-JS9.Display.prototype.gather = function(){
-    var i, uim;
-    for(i=0; i<JS9.images.length; i++){
-	uim = JS9.images[i];
-	if( this !== uim.display ){
-	    uim.moveToDisplay(this);
-	}
-    }
-};
-
-// separate images in this display into new displays
-JS9.Display.prototype.separate = function(opts){
-    var that = this;
-    var d0, d1;
-    var sep = {};
-    var row = 0, col = 0;
-    var myid = 1;
-    var rexp = /_sep[0-9][0-9]*/;
-    var sepopts = JS9.globalOpts.separate;
-    var menuStr = "<div class='JS9Menubar' id='%sMenubar' data-width=%s></div>";
-    var toolStr = "<div class='JS9Toolbar' id='%sToolbar' data-width=%s></div>";
-    var js9Str = "<div class='JS9' id='%s' data-width=%s data-height=%s></div>";
-    var colorStr = "<div style='margin-top: 2px;'><div class='JS9Colorbar' id='%sColorbar' data-width=%s></div></div>";
-    var winoptsStr = "width=%s,height=%s,top=%s,left=%s,resize=1,scolling=1";
-    var SIZE_FUDGE = JS9.bugs.webkit_resize ? JS9.RESIZEFUDGE : 0;
-    var COLORBAR_FUDGE = 7;
-    var DHTML_HEIGHT = 30 + 13; // height of dhtml lightwin extras;
-    var initopts = function(fromID, opts){
-	// sanify check
-	if( !fromID ){
-	    JS9.error("can't init seapration ops: no from id");
-	}
-	sep.layout = opts.layout || JS9.globalOpts.separate.layout || "auto";
-	sep.leftMargin = opts.leftMargin || sepopts.leftMargin || 0;
-	sep.topMargin  = opts.topMargin  || sepopts.topMargin  || 0;
-	switch(sep.layout){
-	case "auto":
-	    col = 1;
-	    row = 0;
-	    break;
-	case "horizontal":
-	    col = 1;
-	    row = 0;
-	    break;
-	case "vertical":
-	    col = 0;
-	    row = 1;
-	    break;
-	default:
-	    col = 1;
-	    row = 0;
-	    break;
-	}
-	sep.topExtra = DHTML_HEIGHT;
-	sep.leftExtra = 0;
-	sep.js9 = $("#"+fromID);
-	sep.menubar = $("#"+fromID+"Menubar");
-	sep.toolbar = $("#"+fromID+"Toolbar");
-	sep.colorbar = $("#"+fromID+"Colorbar");
-	if( sep.js9.length > 0 ){
-	    // hack: height of the dhtml drag handle and status area
-	    sep.width = sep.js9.width();
-	    sep.height = sep.js9.height();
-	    sep.top = sep.js9.offset().top - $(window).scrollTop();
-	    sep.left = sep.js9.offset().left - $(document).scrollLeft();
-	    if( sep.menubar.length > 0 ){
-		sep.height += sep.menubar.height();
-		sep.top -= sep.menubar.height();
-	    }
-	    if( sep.toolbar.length > 0 ){
-		sep.height += sep.toolbar.height();
-		sep.top -= sep.toolbar.height();
-	    }
-	    if( sep.colorbar.length > 0 ){
-		sep.height += sep.colorbar.height();
-		sep.top -= sep.colorbar.height();
-		sep.top += COLORBAR_FUDGE;
-	    }
-	}
-    };
-    var getopts = function(fromID, toID){
-	var html, winopts;
-	if( fromID ){
-	    if( sep.js9.length > 0 ){
-		html = "";
-		if( sep.menubar.length > 0 ){
-		    html += sprintf(menuStr, toID, sep.js9.width());
-		}
-		if( sep.toolbar.length > 0 ){
-		    html += sprintf(toolStr, toID, sep.js9.width());
-		}
-		html += sprintf(js9Str,
-				toID,
-				sep.js9.width()-SIZE_FUDGE,
-				sep.js9.height()-SIZE_FUDGE);
-		if( sep.colorbar.length > 0 ){
-		    html += sprintf(colorStr, toID, sep.js9.width());
-		}
-	    }
-	    if( sep.layout === "auto" ){
-		if( (sep.left + (sep.width * (col+0.5))) > window.innerWidth ){
-		    row++;
-		    col = 0;
-		}
-	    }
-	    winopts = sprintf(winoptsStr,
-	      sep.width,
-	      sep.height,
-	      sep.top  + ((sep.height + sep.topMargin  + sep.topExtra) * row),
-              sep.left + ((sep.width  + sep.leftMargin + sep.leftExtra) * col));
-	    // move to next column
-	    if( sep.layout === "auto" || sep.layout === "horizontal" ){
-		col++;
-	    } else if( sep.layout === "vertical" ){
-		row++;
-	    }
-	}
-	// return info for this  column;
-	return {id: toID, html: html, winopts: winopts};
-    };
-    var separateim = function(n){
-	var im, winopts;
-	var id;
-	if( JS9.images.length > n ){
-	    im = JS9.images[n];
-	    // display this image so it's the current one we move
-	    im.displayImage("all");
-	    // look for images in this display
-	    if( that === im.display ){
-		// leave the first one in place
-		if( d0 === undefined ){
-		    d0 = JS9.images[n].display.id;
-		    initopts(d0, opts);
-		    separateim(n+1);
-		} else {
-		    // create a new window for this image
-		    if( typeof opts.idbase === "string" ){
-			id = opts.idbase + myid++;
-			d1 = id;
-		    } else {
-			d1 = d0.replace(rexp, "") + "_sep" + JS9.uniqueID();
-		    }
-		    // code to run when new window exists
-		    $("#dhtmlwindowholder").arrive("#"+d1, {onceOnly: true},
-			function(){
-			    // FF (at least) needs this 0ms delay
-			    window.setTimeout(function(){
-				// move this image
-				im.moveToDisplay(d1);
-				// process next image
-				separateim(n+1);
-			    }, 0);
-			});
-		    winopts = getopts(d0, d1);
-		    // add id, if idbase was supplied in opts
-		    if( id ){
-			winopts.id = id;
-		    }
-		    // load new window, code above gets run when window exists
-		    JS9.LoadWindow(null, winopts);
-		}
-	    } else {
-		// this image is in a diffferent display, so process next image
-		separateim(n+1);
-	    }
-	}
-    };
-    if( typeof opts === "string" ){
-	try{ opts = JSON.parse(opts); }
-	catch(e){ JS9.error("can't parse displaySeparate opts: " + opts, e); }
-    }
-    // opts are optional
-    opts = opts || {};
-    //  start separating the images
-    separateim(0);
-};
-
-// display the next image from the JS9 images list that is in this display
-JS9.Display.prototype.nextImage = function(inc){
-    var idx, curidx, im, dpos, npos;
-    inc = inc || 1;
-    if( !this.image ){
-	return;
-    }
-    dpos = this.image.pos;
-    // get index into images array for the displayed image
-    for(idx=0; idx<JS9.images.length; idx++){
-	if( this.image === JS9.images[idx] ){
-	    break;
-	}
-    }
-    // look for next image, wrap if necessary
-    for(curidx=idx+inc; curidx!==idx; curidx += inc){
-	if( curidx >= JS9.images.length ){
-	    curidx = 0;
-	}
-	if( curidx < 0 ){
-	    curidx = JS9.images.length - 1;
-	}
-	if( JS9.images[curidx].display === this ){
-	    break;
-	}
-    }
-    // display if we are not back to where we started
-    if( idx !== curidx ){
-	// display image, 2D graphics, etc.
-	im = JS9.images[curidx];
-	im.displayImage("all");
-	im.refreshLayers();
-	im.display.clearMessage();
-	if( dpos ){
-	    npos = im.displayToImagePos(dpos);
-	    im.valpos = null;
-	    im.valpos = im.updateValpos(npos, true);
-	}
-    }
-    // allow chaining
-    return this;
-};
-
-// load session from a json file
-// NB: save is an image method, load is a display method
-JS9.Display.prototype.loadSession = function(file){
-    var that = this;
-    var objs = {};
-    var obj;
-    var finish = function(im){
-	var i, dlayer, layer, lname, xeq, obj;
-	var dorender = function(){
-	    // update objects for parents and children
-	    JS9.Fabric.updateChildren(this, null, "objects");
-	    // change shape positions if the displays sizes differ
-	    im.refreshLayers();
-	};
-	obj = objs[im.file] || {};
-	// reconstitute blend state
-	if( obj.blend ){
-	    im.blend = $.extend(true, {}, obj.blend);
-	}
-	// reconstitute wcsim state
-	if( obj.wcsim ){
-	    im.wcsim = JS9.lookupImage(obj.wcsim);
-	}
-	// reconstitute layers
-	if( obj.layers && obj.layers.length ){
-	    for(i=0; i<obj.layers.length; i++){
-		layer = obj.layers[i];
-		lname = layer.name;
-		// make sure layer exists in the display
-		dlayer = that.newShapeLayer(lname, layer.dopts);
-		// add a layer instance to this image (no objects yet)
-		im.addShapes(lname, []);
-		// load the session objects into the layer and render
-		dlayer.canvas.loadFromJSON(layer.json, dorender.bind(dlayer));
-		// restore catalog and starbase, if necessary
-		if( layer.catalog ){
-		    im.layers[lname].catalog = layer.catalog;
-		}
-		if( layer.starbase ){
-		    try{im.layers[lname].starbase = JSON.parse(layer.starbase);}
-		    catch(ignore){}
-		}
-	    }
-	}
-	// re-execute from the xeq stash
-	if( obj.xeqstash ){
-	    for(i=0; i<obj.xeqstash.length; i++){
-		xeq = obj.xeqstash[i];
-		xeq.context = xeq.context || "image";
-		try{
-		    switch(xeq.context){
-		    case "image":
-			im[xeq.func].apply(im, xeq.args);
-			break;
-		    case "display":
-			im.display[xeq.func].apply(im.display, xeq.args);
-			break;
-		    default:
-			im[xeq.func].apply(im, xeq.args);
-			break;
-		    }
-		}
-		catch(e){
-		    JS9.error("error executing stash: "+ xeq.func, e, false);
-		}
-	    }
-
-	}
-    };
-    var loadit = function(jobj){
-	// sanity check
-	if( !jobj.file ){
-	    JS9.error("session does not contain a filename");
-	}
-	// save object so finish can find it
-	obj = $.extend(true, {}, jobj);
-	// include an onload callback to load the layers
-	obj.params.onload = finish;
-	// delete old display info
-	if( obj.params.display ){
-	    delete obj.params.display;
-	}
-	// save for finish
-	objs[obj.file] = obj;
-	// load the image
-	JS9.Load(obj.file, obj.params, {display: that.id});
-    };
-    var loadem = function(jobj){
-	var i, key;
-	// save (and remove) globals
-	if( jobj.globalOpts ){
-	    $.extend(true, JS9.globalOpts, jobj.globalOpts);
-	    delete jobj.globalOpts;
-	}
-	if( jobj.images ){
-	    for(i=0; i<jobj.images.length; i++){
-		loadit(jobj.images[i]);
-	    }
-	} else {
-	    loadit(jobj);
-	}
-	// reconstitute display parameters
-	if( jobj.display ){
-	    for( key in jobj.display ){
-		if( jobj.display.hasOwnProperty(key) ){
-		    switch(key){
-		    case "blendMode":
-			JS9.BlendDisplay(jobj.display[key], {display: that});
-			break;
-		    default:
-			that[key] = jobj.display[key];
-			break;
-		    }
-		}
-	    }
-	}
-    };
-    // change the cursor to show the waiting status
-    JS9.waiting(true, this);
-    if( typeof file === "object" ){
-	loadem(file);
-    } else {
-	$.ajax({
-	    url: file,
-	    cache: false,
-	    dataType: "json",
-	    mimeType: "application/json",
-	    async: false,
-	    success: function(jobj){
-		loadem(jobj);
-	    },
-	    error:  function(jqXHR, textStatus, errorThrown){
-		JS9.error("could not load session: " + file, errorThrown);
-	    }
-	});
-    }
-    // allow chaining
-    return this;
-};
-
-// dummy routines to display/clear message, overwritten in info plugin
-// eslint-disable-next-line no-unused-vars
-JS9.Display.prototype.displayMessage = function(type, message, target){
-    return;
-};
-// eslint-disable-next-line no-unused-vars
-JS9.Display.prototype.clearMessage = function(which){
-    return;
 };
 
 // convert table to a shape array for the given image
@@ -7930,7 +7345,7 @@ JS9.Image.prototype.loadCatalog = function(layer, catalog, opts){
     // opts is optional
     opts = opts || {};
     // default color, if none specified
-    opts.color = opts.color || global.color || "#00FF00";
+    opts.color = opts.color || global.color || "#C7D401";
     // wcs system
     opts.wcssys = opts.wcssys || global.wcssys;
     // update the WCS strings when adding a catalog shape
@@ -7967,6 +7382,7 @@ JS9.Image.prototype.loadCatalog = function(layer, catalog, opts){
     return this;
 };
 
+// save catalog as a file
 JS9.Image.prototype.saveCatalog = function(fname, which){
     var layer, cat, blob;
     layer = which || this.activeShapeLayer();
@@ -8076,8 +7492,1416 @@ JS9.Image.prototype.wcs2imlen = function(s){
 };
 
 // ---------------------------------------------------------------------
+// JS9 Colormap support
+// ---------------------------------------------------------------------
+
+JS9.Colormap = function(name, a1, a2, a3){
+    this.name = name;
+    switch(arguments.length){
+    case 2:
+	this.type = "lut";
+	this.colors = a1;
+	break;
+    case 4:
+	this.type = "sao";
+	this.vertices = [a1, a2, a3];
+	break;
+    default:
+	JS9.error("colormap requires a colormap name and 1 or 3 array args");
+    }
+    // add to list of colormaps
+    JS9.colormaps.push(this);
+    // debugging
+    if( JS9.DEBUG > 1 ){
+	JS9.log("JS9 colormap:  %s", this.name);
+    }
+};
+
+JS9.Colormap.prototype.mkColorCell = function(ii){
+    var m;
+    var count = JS9.COLORSIZE;
+    var umax = 255;
+    var rgb = [0, 0, 0];
+    var x, i, j, val, vertex, len;
+    var size, index;
+    switch(this.type){
+    // from: tksao1.0/colormap/sao.C
+    case "sao":
+	x = ii / count;
+	// for each of red, green, blue ...
+	for(j=0; j<3; j++){
+	    // look for the first vertex with x value larger than our x value
+	    vertex = this.vertices[j];
+	    len = vertex.length;
+	    for(i=0; i<len; i++){
+		if( vertex[i][0] > x ){
+		    break;
+		}
+	    }
+	    // if first vertex x value is greater than ours, use it
+	    if( i === 0 ){
+		val = vertex[0][1];
+	    // if last vertex xvalue is less than ours, use it
+	    } else if( i === len ){
+		val = vertex[len-1][1];
+	    // interpolate between two vertices
+	    } else {
+		m = (vertex[i][1] - vertex[i-1][1]) /
+		    (vertex[i][0] - vertex[i-1][0]);
+		if( m ){
+		    // point slope form
+		    val = m * (x - vertex[i-1][0]) + vertex[i-1][1];
+		} else {
+		    val = vertex[i][1];
+		}
+	    }
+	    // assign value to the correct color in the result array
+	    rgb[j] = val * umax;
+	}
+	break;
+    // from: tksao1.0/colormap/lut.C
+    case "lut":
+	size = this.colors.length;
+	// index into the evenly spaced RGB values
+	index = Math.floor(ii*size/count);
+	if( index < 0 ){
+	    rgb[0] = this.colors[0][0] * umax;
+	    rgb[1] = this.colors[0][1] * umax;
+	    rgb[2] = this.colors[0][2] * umax;
+	} else if( index < size ){
+	    rgb[0] = this.colors[index][0] * umax;
+	    rgb[1] = this.colors[index][1] * umax;
+	    rgb[2] = this.colors[index][2] * umax;
+	} else {
+	    rgb[0] = this.colors[size-1][0] * umax;
+	    rgb[1] = this.colors[size-1][1] * umax;
+	    rgb[2] = this.colors[size-1][2] * umax;
+	}
+	break;
+    default:
+	JS9.error("unknown colormap type");
+    }
+    // return the news
+    return rgb;
+};
+
+// ---------------------------------------------------------------------
+// JS9 display object for the screen display
+// ---------------------------------------------------------------------
+
+JS9.Display = function(el){
+    var that = this;
+    // pass jQuery element, DOM element, or id
+    if( el instanceof jQuery ){
+	this.divjq = el;
+    } else if( typeof el === "object" ){
+	this.divjq = $(el);
+    } else {
+	this.divjq = $("#"+el);
+    }
+    // make sure div has some id
+    if( !this.divjq.attr("id") ){
+	this.divjq.attr("id", JS9.DEFID);
+    }
+    // save id
+    this.id = this.divjq.attr("id");
+    // display-specific scratch space
+    this.tmp = {};
+    // add class
+    this.divjq.addClass("JS9");
+    // set width and height on div
+    this.width = this.divjq.attr("data-width");
+    if( !this.width  ){
+	this.width  = JS9.WIDTH;
+    }
+    this.divjq.css("width", this.width);
+    this.width = parseInt(this.divjq.css("width"), 10);
+    this.height = this.divjq.attr("data-height");
+    if( !this.height ){
+	this.height = JS9.HEIGHT;
+    }
+    this.divjq.css("height", this.height);
+    this.height = parseInt(this.divjq.css("height"), 10);
+    // save original width and height
+    this.width0 = this.width;
+    this.height0 = this.height;
+    // create DOM canvas element
+    this.canvas = document.createElement("canvas");
+    // jquery version for event handling and DOM manipulation
+    this.canvasjq = $(this.canvas)
+	.addClass("JS9Image")
+	.attr("id", this.id+"Image")
+	.attr("width", this.width)
+	.attr("height", this.height)
+	.css("z-index", JS9.ZINDEX);
+    // add container to the high-level div
+    this.displayConjq = $("<div>")
+	.addClass("JS9Container")
+	.css("z-index", JS9.ZINDEX)
+	.attr("tabindex", "0")
+	.append(this.canvasjq)
+	.appendTo(this.divjq);
+    // add resize capability, if necessary
+    if( JS9.globalOpts.resizeHandle && window.hasOwnProperty("ResizeSensor") ){
+	this.divjq
+	    .css("resize", "both")
+	    .css("overflow", "hidden");
+	if( JS9.bugs.webkit_resize ){
+	    this.owidth = parseInt(this.divjq.css("width"), 10);
+	    this.oheight = parseInt(this.divjq.css("height"), 10);
+	    this.divjq
+		.css("width",  this.width + JS9.RESIZEFUDGE)
+		.css("height", this.height + JS9.RESIZEFUDGE);
+	}
+	this.resizeSensor = new ResizeSensor(this.divjq, function(){
+	    var nwidth = that.divjq.width();
+	    var nheight = that.divjq.height();
+	    if( JS9.bugs.webkit_resize ){
+		nwidth  -= JS9.RESIZEFUDGE;
+		nheight -= JS9.RESIZEFUDGE;
+	    }
+	    that.resize(nwidth, nheight);
+	});
+    }
+    // drawing context
+    this.context = this.canvas.getContext("2d");
+    // turn off anti-aliasing
+    if( !JS9.ANTIALIAS ){
+	this.context.imageSmoothingEnabled = false;
+	this.context.webkitImageSmoothingEnabled = false;
+	this.context.msImageSmoothingEnabled = false;
+    }
+    // add the display tooltip
+    this.tooltip = $("<div>")
+	.attr("id", "tooltip_" + this.id)
+	.addClass("JS9Tooltip")
+	.appendTo(this.divjq);
+    // no image loaded into this canvas
+    this.image = null;
+    // no plugin instances yet
+    this.pluginInstances = {};
+    // no layers yet
+    this.layers = {};
+    // init message layer
+    this.initMessages();
+    // blend mode is false to start
+    this.blendMode = false;
+    // display-based mouse/touch actions initially from global
+    this.mouseActions = JS9.globalOpts.mouseActions.slice(0);
+    this.touchActions = JS9.globalOpts.touchActions.slice(0);
+    // display-based scroll-based zoom initially from global
+    this.mousetouchZoom = JS9.globalOpts.mousetouchZoom;
+    // add event handlers
+    this.divjq.on("mouseover", this, function(evt){
+	return JS9.mouseOverCB(evt);
+    });
+    this.divjq.on("mousedown touchstart", this, function(evt){
+	return JS9.mouseDownCB(evt);
+    });
+    this.divjq.on("mousemove touchmove", this, function(evt){
+	return JS9.mouseMoveCB(evt);
+    });
+    this.divjq.on("mouseup touchend", this, function(evt){
+	return JS9.mouseUpCB(evt);
+    });
+    this.divjq.on("mouseout", this, function(evt){
+	return JS9.mouseOutCB(evt);
+    });
+    this.divjq.on("keypress", this, function(evt){
+	return JS9.keyPressCB(evt);
+    });
+    this.divjq.on("keydown", this, function(evt){
+	return JS9.keyDownCB(evt);
+    });
+    this.divjq.on("keyup", this, function(evt){
+	return JS9.keyUpCB(evt);
+    });
+    this.divjq.on("wheel", this, function(evt){
+	return JS9.wheelCB(evt);
+    });
+    // set up drag and drop, if available
+    this.divjq.on("dragenter", this, function(evt){
+	return JS9.dragenterCB(this.id, evt);
+    });
+    this.divjq.on("dragover", this, function(evt){
+	return JS9.dragoverCB(this.id, evt);
+    });
+    this.divjq.on("dragexit", this, function(evt){
+	return JS9.dragexitCB(this.id, evt);
+    });
+    this.divjq.on("drop", this, function(evt){
+	return JS9.dragdropCB(this.id, evt);
+    });
+    // no context menus on the display
+    this.divjq.on("contextmenu", this, function(){
+	return false;
+    });
+    // add local file open support
+    this.addFileDialog("Load", JS9.globalOpts.imageTemplates);
+    this.addFileDialog("RefreshImage", JS9.globalOpts.imageTemplates);
+    this.addFileDialog("LoadRegions", JS9.globalOpts.regionTemplates);
+    this.addFileDialog("LoadSession", JS9.globalOpts.sessionTemplates);
+    this.addFileDialog("LoadColormap", JS9.globalOpts.colormapTemplates);
+    this.addFileDialog("LoadCatalog", JS9.globalOpts.catalogTemplates);
+    // add to list of displays
+    JS9.displays.push(this);
+    // debugging
+    if( JS9.DEBUG ){
+	JS9.log("JS9 display:  %s", this.id);
+    }
+};
+
+// add support for file dialog box that executes JS9 routine on file blobs
+JS9.Display.prototype.addFileDialog = function(funcName, template){
+    var that = this;
+    var jdiv, jinput, id;
+    // sanity check
+    if( !funcName || !JS9.publics[funcName] ){
+	return;
+    }
+    id = "openLocal" + funcName + "-" + that.id;
+    // outer div
+    // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/file
+    // recommends opacity over visibility, but it breaks the menubar in ios
+    jdiv = $("<div>")
+	.css("visibility", "hidden")
+	.css("position", "relative")
+	.css("top", -50)
+	.css("left", -50)
+	.appendTo(that.divjq);
+    // inner file input element
+    jinput = $("<input>")
+	.attr("type", "file")
+	.attr("id", id)
+	.attr("multiple", true)
+	.appendTo(jdiv);
+    // add accept template, if possible
+    if( template ){
+	jinput.attr("accept", template);
+    }
+    // add callback for when input changes
+    jinput.on("change", function(){
+	var i;
+	for(i=0; i<this.files.length; i++){
+	    // execute a JS9 public access routine
+	    JS9.publics[funcName](this.files[i], {display: that.id});
+	}
+	this.value = null;
+	return false;
+    });
+};
+
+// initialize message layers
+JS9.Display.prototype.initMessages = function(){
+    this.messageContainer = $("<div>")
+	.addClass("JS9Container")
+        .css("z-index", JS9.MESSZINDEX)
+	.appendTo(this.divjq);
+    this.infoArea = $("<div>")
+	.addClass("JS9Message")
+	.appendTo(this.messageContainer);
+    this.regionsArea = $("<div>")
+	.addClass("JS9Message")
+	.appendTo(this.messageContainer);
+    this.progressArea = $("<div>")
+	.addClass("JS9Progress")
+	.addClass("JS9Message")
+	.appendTo(this.messageContainer);
+    this.progressBar = $("<progress>")
+	.addClass("JS9ProgressBar")
+	.attr("value", 0)
+	.attr("max", 100)
+	.attr("name", "progress")
+	.appendTo(this.progressArea);
+    // make it draggable, if possible
+    try{
+	this.messageContainer.draggable({
+	    // eslint-disable-next-line no-unused-vars
+	    start: function(event, ui){
+		this.oicb = JS9.globalOpts.internalContrastBias;
+		JS9.globalOpts.internalContrastBias = false;
+	    },
+	    // eslint-disable-next-line no-unused-vars
+	    stop: function(event, ui){
+		JS9.globalOpts.internalContrastBias = this.oicb;
+	    }
+	});
+    }
+    catch(ignore){}
+    // allow chaining
+    return this;
+};
+
+//  display a plugin in a light window or a new window
+JS9.Display.prototype.displayPlugin = function(plugin){
+    var that = this;
+    var i, a, w, h, p, r, s, title;
+    var name, did, oid, iid, odiv, pdiv, pinst, win;
+    if( typeof plugin === "string" ){
+	for(i=0; i<JS9.plugins.length; i++){
+	    p = JS9.plugins[i];
+	    if( p.name === plugin ){
+		plugin = p;
+		break;
+	    }
+	}
+    }
+    if( typeof plugin !== "object" || !plugin.name ){
+	JS9.error("unknown plugin type for displayPlugin");
+    }
+    pinst = this.pluginInstances[plugin.name];
+    // some day we want to support light windows and new (external) windows
+    switch(JS9.globalOpts.winType){
+    case "light":
+	a = JS9.lightOpts[JS9.LIGHTWIN];
+	if( !pinst || !pinst.status ){
+	    // no spaces in an id
+	    name = plugin.name.replace(/\s/g, "_");
+	    // convenience ids
+	    did = this.id + "_" + name + "_lightDiv";
+	    oid = this.id + "_" + name + "_outerDiv";
+	    iid = this.id + "_" + name + "_innerDiv";
+	    // set up a new light instance, if necessary
+	    if( !pinst ){
+		odiv = $("<div>")
+		    .attr("id", oid)
+		    .css("display", "none")
+		    .appendTo($(this.divjq));
+		$("<div>")
+		    .addClass(plugin.name)
+		    .attr("id", iid)
+		    .attr("data-js9id", this.divjq.attr("id"))
+		    .css("height", "100%")
+		    .css("width", "100%")
+		    .appendTo(odiv);
+	    }
+	    // window not created: create and show it
+	    // create the window
+	    w = plugin.opts.winDims[0] || JS9.WIDTH;
+	    h = plugin.opts.winDims[1] || JS9.HEIGHT;
+	    if( plugin.opts.winResize ){
+		r = "1";
+	    } else {
+		r = "0";
+	    }
+	    // light window param string
+	    s = sprintf(a.format, w, h, r);
+	    // add the title, if explicitly called for and if not already added
+	    if( plugin.opts.toolbarHTML &&
+		plugin.opts.toolbarHTML.search(/\$title/) >= 0 ){
+		title = "";
+	    } else {
+		title = plugin.opts.winTitle || "";
+	    }
+	    // add display to title
+	    title += sprintf(JS9.IDFMT, this.id);
+	    // create the light window
+	    win = JS9.lightWin(did, "div", oid, title, s);
+	    // find inner div in the light window
+	    pdiv = $("#" + did + " #" + iid);
+	    // create the plugin inside the inner div
+	    pinst = JS9.instantiatePlugin(pdiv, plugin, win);
+	    pinst.winHandle.onclose = function(){
+		// just hide the window
+		pinst.winHandle.hide();
+		pinst.status = "inactive";
+		if( plugin.opts.onpluginclose ){
+		    try{
+			plugin.opts.onpluginclose.call(pinst, that.image);
+		    }
+		    catch(e){
+			JS9.log("onplugincloseCB: %s [%s]\n%s",
+				plugin.name, e.message, JS9.strace(e));
+		    }
+		}
+		return false;
+	    };
+	    pinst.status = "active";
+	    if( plugin.opts.onplugindisplay ){
+		try{
+		    plugin.opts.onplugindisplay.call(pinst, this.image);
+		}
+		catch(e){
+		    JS9.log("onplugindisplayCB: %s [%s]\n%s",
+			    plugin.name, e.message, JS9.strace(e));
+		}
+	    }
+	} else if( pinst.status === "inactive" ){
+	    // window created but hidden: show it
+	    if( pinst.winHandle ){
+		pinst.winHandle.show();
+		pinst.status = "active";
+		if( plugin.opts.onplugindisplay ){
+		    try{
+			plugin.opts.onplugindisplay.call(pinst, this.image);
+		    }
+		    catch(e){
+			JS9.log("onplugindisplayCB: %s [%s]\n%s",
+				plugin.name, e.message, JS9.strace(e));
+		    }
+		}
+	    }
+	} else if( pinst.status === "active" ){
+	    // window created and showing: hide it
+	    if( pinst.winHandle ){
+		pinst.winHandle.hide();
+		pinst.status = "inactive";
+		if( plugin.opts.onpluginclose ){
+		    try{
+			plugin.opts.onpluginclose.call(pinst, that.image);
+		    }
+		    catch(e){
+			JS9.log("onplugincloseCB: %s [%s]\n%s",
+				plugin.name, e.message, JS9.strace(e));
+		    }
+		}
+	    }
+	}
+	break;
+    case "new":
+	JS9.error("external window support for plugins not yet implemented");
+	break;
+    }
+};
+
+//  resize a display
+JS9.Display.prototype.resize = function(width, height, opts){
+    var i, div, im, key, layer, nwidth, nheight, nleft, ntop, pinst;
+    var repos = function(o){
+	o.left += nleft;
+	o.top  += ntop;
+	o.setCoords();
+    };
+    // sanity checks
+    if( !JS9.globalOpts.resize ){
+	JS9.error("display resize not enabled");
+    }
+    // no args => return current size
+    if( !width && !height ){
+	return {width: this.width, height: this.height};
+    }
+    // 'full' or 'reset' or 'image'
+    if( width === "full" ){
+	opts = height;
+	if( window.innerWidth ){
+	    width = window.innerWidth;
+	}
+	if( window.innerHeight ){
+	    // including menubar, if available
+	    height = window.innerHeight;
+	    // divs we take into account when centering
+	    for(i=0; i<JS9.globalOpts.centerDivs.length; i++){
+		div = JS9.globalOpts.centerDivs[i];
+		if( this.pluginInstances[div] ){
+		    height -= this.pluginInstances[div].divjq.height();
+		}
+	    }
+	}
+    } else if( width === "image" ){
+	if( !this.image ){
+	    JS9.error("can't resize display to 'image' without an image");
+	}
+	opts = height;
+	width = this.image.raw.width;
+	height = this.image.raw.height;
+    } else if( width === "reset" ){
+	opts = height;
+	width = this.width0 || width;
+	height = this.height0 || height;
+    }
+    // get width and height params
+    width = Math.floor(width);
+    if( height ){
+	height = Math.floor(height);
+    } else {
+	height = width;
+    }
+    // sanity checks
+    if( (width < 10) || (height < 10) ){
+	JS9.error("invalid dimension(s) passed to display resize");
+    }
+    // nothing to do if we are not changing size
+    if( (width === this.width) && (height === this.height) ){
+	return this;
+    }
+    opts = opts || {};
+    // get resize parameters relative to current display
+    nwidth = width;
+    nheight = height;
+    nleft = (nwidth - this.width) / 2;
+    ntop = (nheight - this.height) / 2;
+    // change display parameters
+    this.width = nwidth;
+    this.height = nheight;
+    this.divjq.css("width", nwidth);
+    this.divjq.css("height", nheight);
+    this.canvasjq.attr("width", nwidth);
+    this.canvasjq.attr("height", nheight);
+    if( JS9.bugs.webkit_resize ){
+	if( !this.resizing ){
+	    this.owidth = Math.min(this.owidth, nwidth);
+	    this.oheight = Math.min(this.oheight, nheight);
+	}
+    }
+    // change the menubar width, unless explicitly told not to
+    if( $.inArray("JS9Menubar", JS9.globalOpts.resizeDivs) >= 0 &&
+	(JS9.isNull(opts.resizeMenubar) || opts.resizeMenubar) ){
+	pinst = this.pluginInstances.JS9Menubar;
+	if( pinst ){
+	    $("#" + this.id + "Menubar").css("width", nwidth);
+	}
+    }
+    // change the toolbar width, unless explicitly told not to
+    if( $.inArray("JS9Toolbar", JS9.globalOpts.resizeDivs) >= 0 &&
+	(JS9.isNull(opts.resizeToolbar) || opts.resizeToolbar) ){
+	pinst = this.pluginInstances.JS9Toolbar;
+	if( pinst ){
+	    // set new value for width
+	    pinst.divjq.attr("data-width", String(nwidth)+"px");
+	    // re-init toolbar for this size
+	    JS9.Toolbar.init.call(pinst);
+	}
+    }
+    // change the colorbar width, unless explicitly told not to
+    if( $.inArray("JS9Colorbar", JS9.globalOpts.resizeDivs) >= 0 &&
+	(JS9.isNull(opts.resizeColorbar) || opts.resizeColorbar) ){
+	pinst = this.pluginInstances.JS9Colorbar;
+	if( pinst ){
+	    // set new value for width
+	    pinst.divjq.attr("data-width", String(nwidth)+"px");
+	    // re-init colorbar for this size
+	    JS9.Colorbar.init.call(pinst);
+	}
+    }
+    // change size of shape canvases
+    for(key in this.layers ){
+	if( this.layers.hasOwnProperty(key) ){
+	    layer = this.layers[key];
+	    if( layer.dtype === "main" ){
+		layer.divjq.css("width", nwidth);
+		layer.divjq.css("height", nheight);
+		layer.canvasjq.attr("width", nwidth);
+		layer.canvasjq.attr("height", nheight);
+		layer.canvas.setWidth(nwidth);
+		layer.canvas.setHeight(nheight);
+		layer.canvas.calcOffset();
+	    }
+	}
+    }
+    // change position of shapes on currently displayed layers
+    // save resize parameters for undisplayed layers
+    for(i=0; i<JS9.images.length; i++){
+	im = JS9.images[i];
+	im.mkSection();
+	if( im.display && (this === im.display) ){
+	    // save or update resize object
+	    if( im.resize ){
+		im.resize.left += nleft;
+		im.resize.top  += ntop;
+	    } else {
+		im.resize = {left: nleft, top: ntop};
+	    }
+	    // current image: change object positions in displayed layers
+	    if( im === im.display.image ){
+		for( key in im.layers ){
+		    if( im.layers.hasOwnProperty(key) ){
+			layer = im.layers[key];
+			if( layer.dlayer.type === "main" && !layer.json ){
+			    layer.canvas.getObjects().forEach(repos);
+			    layer.canvas.renderAll();
+			}
+		    }
+		}
+	    }
+	}
+    }
+    if( JS9.bugs.webkit_resize ){
+	this.divjq
+	    .css("width",  this.width  + JS9.RESIZEFUDGE)
+	    .css("height", this.height + JS9.RESIZEFUDGE);
+    }
+    // redisplay current image, if necessary
+    if( this.image && (JS9.globalOpts.resizeRedisplay || !this.resizing) ){
+	this.image.displayImage("all", opts);
+	this.image.refreshLayers();
+    }
+    // center, if necessary
+    if( opts.center ){
+	this.center();
+    }
+    return this;
+};
+
+// are we in the resize handle area of this display?
+JS9.Display.prototype.inResize = function(pos){
+    if( JS9.globalOpts.resizeHandle ){
+	if( (pos.x + JS9.RESIZEDIST >= this.divjq.width())  &&
+	    (pos.y + JS9.RESIZEDIST >= this.divjq.height()) ){
+	    return true;
+	}
+    }
+    return false;
+};
+
+// scroll the display to the center of the viewport
+// http://stackoverflow.com/questions/18150090/jquery-scroll-element-to-the-middle-of-the-screen-instead-of-to-the-top-with-a
+JS9.Display.prototype.center = function(){
+    var i, div, tel;
+    var el = this.divjq;
+    var voffset, hoffset;
+    var elVOffset = el.offset().top;
+    var elHeight = el.height();
+    var windowHeight = $(window).height();
+    var elHOffset = el.offset().left;
+    var elWidth = el.width();
+    var windowWidth = $(window).width();
+    var speed = 250;
+    // divs we take into account when getting total height
+    for(i=0; i<JS9.globalOpts.centerDivs.length; i++){
+	div = JS9.globalOpts.centerDivs[i];
+	if( this.pluginInstances[div] ){
+	    tel = this.pluginInstances[div].divjq;
+	    elHeight += tel.height();
+	    elVOffset = Math.min(tel.offset().top, elVOffset);
+	}
+    }
+    if (elHeight < windowHeight) {
+	voffset = elVOffset - ((windowHeight / 2) - (elHeight / 2));
+    }
+    else {
+	voffset = elVOffset;
+    }
+    if (elWidth < windowWidth) {
+	hoffset = elHOffset - ((windowWidth / 2) - (elWidth / 2));
+    }
+    else {
+	hoffset = elHOffset;
+    }
+    $('html, body').animate({scrollTop: voffset, scrollLeft: hoffset}, speed);
+    // allow chaining
+    return this;
+};
+
+// gather images from other displays into this display
+JS9.Display.prototype.gather = function(opts){
+    var that = this;
+    var i, arr, uim;
+    // allow json opts
+    if( typeof opts === "string" ){
+	try{ opts = JSON.parse(opts); }
+	catch(e){ JS9.error("can't parse gather opts: " + opts, e); }
+    }
+    // opts are optional
+    opts = opts || {};
+    // array of images to use or all of them
+    arr = opts.images || JS9.images;
+    for(i=0; i<arr.length; i++){
+	if( typeof arr[i] === "number" ){
+	    uim = JS9.images[arr[i]];
+	} else {
+	    uim = arr[i];
+	}
+	if( uim && uim.display !== this ){
+	    uim.moveToDisplay(this);
+	}
+    }
+    // extended plugins
+    if( JS9.globalOpts.extendedPlugins ){
+	if( that.image ){
+	    that.image.xeqPlugins("image", "ongatherdisplay");
+	}
+    }
+};
+
+// separate images in this display into new displays
+JS9.Display.prototype.separate = function(opts){
+    var that = this;
+    var arr, d0, d1;
+    var sep = {};
+    var row = 0, col = 0;
+    var myid = 1;
+    var rexp = /_sep[0-9][0-9]*/;
+    var sepopts = JS9.globalOpts.separate;
+    var menuStr = "<div class='JS9Menubar' id='%sMenubar' data-width=%s></div>";
+    var toolStr = "<div class='JS9Toolbar' id='%sToolbar' data-width=%s></div>";
+    var js9Str = "<div class='JS9' id='%s' data-width=%s data-height=%s></div>";
+    var colorStr = "<div style='margin-top: 2px;'><div class='JS9Colorbar' id='%sColorbar' data-width=%s></div></div>";
+    var winoptsStr = "width=%s,height=%s,top=%s,left=%s,resize=1,scolling=1";
+    var SIZE_FUDGE = JS9.bugs.webkit_resize ? JS9.RESIZEFUDGE : 0;
+    var COLORBAR_FUDGE = 7;
+    var DHTML_HEIGHT = 30 + 13; // height of dhtml lightwin extras;
+    var initopts = function(fromID, opts){
+	// sanify check
+	if( !fromID ){
+	    JS9.error("can't init seapration ops: no from id");
+	}
+	sep.layout = opts.layout || JS9.globalOpts.separate.layout || "auto";
+	sep.leftMargin = opts.leftMargin || sepopts.leftMargin || 0;
+	sep.topMargin  = opts.topMargin  || sepopts.topMargin  || 0;
+	switch(sep.layout){
+	case "auto":
+	    col = 1;
+	    row = 0;
+	    break;
+	case "horizontal":
+	    col = 1;
+	    row = 0;
+	    break;
+	case "vertical":
+	    col = 0;
+	    row = 1;
+	    break;
+	default:
+	    col = 1;
+	    row = 0;
+	    break;
+	}
+	sep.topExtra = DHTML_HEIGHT;
+	sep.leftExtra = 0;
+	sep.js9 = $("#"+fromID);
+	sep.menubar = $("#"+fromID+"Menubar");
+	if( sep.menubar.length > 0 ){
+	    sep.menubar.isactive = sep.menubar.closest(".JS9PluginContainer").css("visibility") === "visible";
+	}
+	sep.toolbar = $("#"+fromID+"Toolbar");
+	if( sep.toolbar.length > 0 ){
+	    sep.toolbar.isactive = sep.toolbar.closest(".JS9PluginContainer").css("visibility") === "visible";
+	}
+	sep.colorbar = $("#"+fromID+"Colorbar");
+	if( sep.colorbar.length > 0 ){
+	    sep.colorbar.isactive = sep.colorbar.closest(".JS9PluginContainer").css("visibility") === "visible";
+	}
+	if( sep.js9.length > 0 ){
+	    // hack: height of the dhtml drag handle and status area
+	    sep.width = sep.js9.width();
+	    sep.height = sep.js9.height();
+	    sep.top = sep.js9.offset().top - $(window).scrollTop();
+	    sep.left = sep.js9.offset().left - $(document).scrollLeft();
+	    if( sep.menubar.isactive ){
+		sep.height += sep.menubar.height();
+		sep.top -= sep.menubar.height();
+	    }
+	    if( sep.toolbar.isactive ){
+		sep.height += sep.toolbar.height();
+		sep.top -= sep.toolbar.height();
+	    }
+	    if( sep.colorbar.isactive ){
+		sep.height += sep.colorbar.height();
+		sep.top -= sep.colorbar.height();
+		sep.top += COLORBAR_FUDGE;
+	    }
+	}
+    };
+    var getopts = function(fromID, toID){
+	var html, winopts;
+	if( fromID ){
+	    if( sep.js9.length > 0 ){
+		html = "";
+		if( sep.menubar.isactive ){
+		    html += sprintf(menuStr, toID, sep.js9.width());
+		}
+		if( sep.toolbar.isactive ){
+		    html += sprintf(toolStr, toID, sep.js9.width());
+		}
+		html += sprintf(js9Str,
+				toID,
+				sep.js9.width()-SIZE_FUDGE,
+				sep.js9.height()-SIZE_FUDGE);
+		if( sep.colorbar.isactive ){
+		    html += sprintf(colorStr, toID, sep.js9.width());
+		}
+	    }
+	    if( sep.layout === "auto" ){
+		if( (sep.left + (sep.width * (col+0.5))) > window.innerWidth ){
+		    row++;
+		    col = 0;
+		}
+	    }
+	    winopts = sprintf(winoptsStr,
+	      sep.width,
+	      sep.height,
+	      sep.top  + ((sep.height + sep.topMargin  + sep.topExtra) * row),
+              sep.left + ((sep.width  + sep.leftMargin + sep.leftExtra) * col));
+	    // move to next column
+	    if( sep.layout === "auto" || sep.layout === "horizontal" ){
+		col++;
+	    } else if( sep.layout === "vertical" ){
+		row++;
+	    }
+	}
+	// return info for this  column;
+	return {id: toID, html: html, winopts: winopts};
+    };
+    var separateim = function(arr, n){
+	var im, winopts;
+	var id;
+	if( arr.length > n ){
+	    if( typeof arr[n] === "number" ){
+		im = JS9.images[arr[n]];
+	    } else {
+		im = arr[n];
+	    }
+	    // look for images in this display
+	    if( im && im.display === that ){
+		// display this image so it's the current one we move
+		im.displayImage("all");
+		// leave the first one in place
+		if( d0 === undefined ){
+		    d0 = im.display.id;
+		    initopts(d0, opts);
+		    separateim(arr, n+1);
+		} else {
+		    // create a new window for this image
+		    if( typeof opts.idbase === "string" ){
+			id = opts.idbase + myid++;
+			d1 = id;
+		    } else {
+			d1 = d0.replace(rexp, "") + "_sep" + JS9.uniqueID();
+		    }
+		    // code to run when new window exists
+		    $("#dhtmlwindowholder").arrive("#"+d1, {onceOnly: true},
+			function(){
+			    // FF (at least) needs this 0ms delay
+			    window.setTimeout(function(){
+				// move this image
+				im.moveToDisplay(d1);
+				// process next image
+				separateim(arr, n+1);
+			    }, 0);
+			});
+		    winopts = getopts(d0, d1);
+		    // add id, if idbase was supplied in opts
+		    if( id ){
+			winopts.id = id;
+		    }
+		    // load new window, code above gets run when window exists
+		    JS9.LoadWindow(null, winopts);
+		}
+	    } else {
+		// this image is in a different display, so process next image
+		separateim(arr, n+1);
+	    }
+	} else {
+	    // extended plugins
+	    if( JS9.globalOpts.extendedPlugins ){
+		if( that.image ){
+		    that.image.xeqPlugins("image", "onseparatedisplay");
+		}
+	    }
+	}
+    };
+    // allow json opts
+    if( typeof opts === "string" ){
+	try{ opts = JSON.parse(opts); }
+	catch(e){ JS9.error("can't parse separate opts: " + opts, e); }
+    }
+    // opts are optional
+    opts = opts || {};
+    // array of images to use
+    arr = opts.images || JS9.images;
+    //  start separating the images
+    separateim(arr, 0);
+};
+
+// display the next image from the JS9 images list that is in this display
+JS9.Display.prototype.nextImage = function(inc){
+    var idx, curidx, im, dpos, npos;
+    inc = inc || 1;
+    if( !this.image ){
+	return;
+    }
+    dpos = this.image.pos;
+    // get index into images array for the displayed image
+    for(idx=0; idx<JS9.images.length; idx++){
+	if( this.image === JS9.images[idx] ){
+	    break;
+	}
+    }
+    // look for next image, wrap if necessary
+    for(curidx=idx+inc; curidx!==idx; curidx += inc){
+	if( curidx >= JS9.images.length ){
+	    curidx = 0;
+	}
+	if( curidx < 0 ){
+	    curidx = JS9.images.length - 1;
+	}
+	if( JS9.images[curidx].display === this ){
+	    break;
+	}
+    }
+    // display if we are not back to where we started
+    if( idx !== curidx ){
+	// display image, 2D graphics, etc.
+	im = JS9.images[curidx];
+	im.displayImage("all");
+	im.refreshLayers();
+	im.display.clearMessage();
+	if( dpos ){
+	    npos = im.displayToImagePos(dpos);
+	    im.valpos = null;
+	    im.valpos = im.updateValpos(npos, true);
+	}
+    }
+    // allow chaining
+    return this;
+};
+
+// load session from a json file
+// NB: save is an image method, load is a display method
+JS9.Display.prototype.loadSession = function(file){
+    var that = this;
+    var objs = {};
+    var obj;
+    var finish = function(im){
+	var i, dlayer, layer, lname, xeq, obj;
+	var dorender = function(){
+	    // update objects for parents and children
+	    JS9.Fabric.updateChildren(this, null, "objects");
+	    // change shape positions if the displays sizes differ
+	    im.refreshLayers();
+	};
+	obj = objs[im.file] || {};
+	// reconstitute blend state
+	if( obj.blend ){
+	    im.blend = $.extend(true, {}, obj.blend);
+	}
+	// reconstitute wcsim state
+	if( obj.wcsim ){
+	    im.wcsim = JS9.lookupImage(obj.wcsim);
+	}
+	// reconstitute layers
+	if( obj.layers && obj.layers.length ){
+	    for(i=0; i<obj.layers.length; i++){
+		layer = obj.layers[i];
+		lname = layer.name;
+		// make sure layer exists in the display
+		dlayer = that.newShapeLayer(lname, layer.dopts);
+		// add a layer instance to this image (no objects yet)
+		im.addShapes(lname, []);
+		// load the session objects into the layer and render
+		dlayer.canvas.loadFromJSON(layer.json, dorender.bind(dlayer));
+		// restore catalog and starbase, if necessary
+		if( layer.catalog ){
+		    im.layers[lname].catalog = layer.catalog;
+		}
+		if( layer.starbase ){
+		    try{im.layers[lname].starbase = JSON.parse(layer.starbase);}
+		    catch(ignore){}
+		}
+	    }
+	}
+	// re-execute from the xeq stash
+	if( obj.xeqstash ){
+	    for(i=0; i<obj.xeqstash.length; i++){
+		xeq = obj.xeqstash[i];
+		xeq.context = xeq.context || "image";
+		try{
+		    switch(xeq.context){
+		    case "image":
+			im[xeq.func].apply(im, xeq.args);
+			break;
+		    case "display":
+			im.display[xeq.func].apply(im.display, xeq.args);
+			break;
+		    default:
+			im[xeq.func].apply(im, xeq.args);
+			break;
+		    }
+		}
+		catch(e){
+		    JS9.error("error executing stash: "+ xeq.func, e, false);
+		}
+	    }
+
+	}
+    };
+    var loadit = function(jobj){
+	// sanity check
+	if( !jobj.file ){
+	    JS9.error("session does not contain a filename");
+	}
+	// save object so finish can find it
+	obj = $.extend(true, {}, jobj);
+	// include an onload callback to load the layers
+	obj.params.onload = finish;
+	// delete old display info
+	if( obj.params.display ){
+	    delete obj.params.display;
+	}
+	// save for finish
+	objs[obj.file] = obj;
+	// load the image
+	JS9.Load(obj.file, obj.params, {display: that.id});
+    };
+    var loadem = function(jobj){
+	var i, key;
+	// save (and remove) globals
+	if( jobj.globalOpts ){
+	    $.extend(true, JS9.globalOpts, jobj.globalOpts);
+	    delete jobj.globalOpts;
+	}
+	if( jobj.images ){
+	    for(i=0; i<jobj.images.length; i++){
+		loadit(jobj.images[i]);
+	    }
+	} else {
+	    loadit(jobj);
+	}
+	// reconstitute display parameters
+	if( jobj.display ){
+	    for( key in jobj.display ){
+		if( jobj.display.hasOwnProperty(key) ){
+		    switch(key){
+		    case "blendMode":
+			JS9.BlendDisplay(jobj.display[key], {display: that});
+			break;
+		    default:
+			that[key] = jobj.display[key];
+			break;
+		    }
+		}
+	    }
+	}
+    };
+    // change the cursor to show the waiting status
+    JS9.waiting(true, this);
+    if( typeof file === "object" ){
+	loadem(file);
+    } else {
+	$.ajax({
+	    url: file,
+	    cache: false,
+	    dataType: "json",
+	    mimeType: "application/json",
+	    async: false,
+	    success: function(jobj){
+		loadem(jobj);
+	    },
+	    error:  function(jqXHR, textStatus, errorThrown){
+		JS9.error("could not load session: " + file, errorThrown);
+	    }
+	});
+    }
+    // allow chaining
+    return this;
+};
+
+// dummy routines to display/clear message, overwritten in info plugin
+// eslint-disable-next-line no-unused-vars
+JS9.Display.prototype.displayMessage = function(type, message, target){
+    return;
+};
+// eslint-disable-next-line no-unused-vars
+JS9.Display.prototype.clearMessage = function(which){
+    return;
+};
+
+// create a mosaic from a multi-extension FITS file or a number of images
+JS9.Display.prototype.createMosaic = function(ims, opts){
+    var i, im, bin, carr;
+    var that = this;
+    var line1 = '|                                                    fname|';
+    var line2 = '|                                                     char|';
+    // remove temp files
+    var cleanup = function(){
+	var i;
+	for(i=0; i<carr.length; i++){
+	    JS9.vunlink(carr[i]);
+	}
+    };
+    // check for Montage error and cleanup as needed
+    var chkerr = function(prog, rstr){
+	var earr;
+	// check for Montage error
+	if( rstr.search(/\[struct stat="OK"/) < 0 ){
+	    // no longer waiting
+	    JS9.waiting(false);
+	    // first remove temp files
+	    cleanup();
+	    // signal this we completed the reproject attempt
+	    earr = rstr.match(/msg="(.*)"/);
+	    if( earr && earr[1] ){
+		JS9.error(earr[1] + " (from " + prog + ")");
+	    } else {
+		JS9.error(rstr || "unknown " + prog + " failure");
+	    }
+	}
+    };
+    // display mosaic as a new image
+    var disp = function(hdu, opts){
+	var topts;
+	opts = opts || {};
+	topts = $.extend(true, {}, opts);
+	// start the waiting!
+	if( opts.waiting !== false ){
+	    JS9.waiting(true, that);
+	}
+	// make sure we use the current display
+	topts.display = that.id;
+	// set up new and display new image
+	JS9.checkNew(new JS9.Image(hdu, topts));
+	// done waiting
+	JS9.waiting(false);
+    };
+    // write comforting messages to the console while we wait and wait
+    var log = function(){
+	var s;
+	if( opts.verbose || JS9.DEBUG > 1 ){
+	    s = sprintf.apply(null, arguments);
+	    // eslint-disable-next-line no-console
+	    JS9.log(s);
+	}
+    };
+    // opts is optional
+    opts = opts || {};
+    // reduce can be taken from the global value
+    opts.reduce = opts.reduce || JS9.globalOpts.reduceMosaic;
+    // same for reduction dims
+    opts.dim = opts.dim ||
+	Math.max(JS9.globalOpts.image.xdim, JS9.globalOpts.image.ydim);
+    // ims can be: array of ims or a single im or null (use displayed image)
+    // each im can itself be an im object or the image string id
+    if( !ims ){
+	// use currently display image, if possible
+	if( this.image ){
+	    ims = [this.image];
+	} else {
+	    ims = [];
+	}
+    } else if( typeof ims === "string" ){
+	if( ims === "current" ){
+	    // use the currently loaded image
+	    if( this.image ){
+		ims = [this.image];
+	    } else {
+		ims = [];
+	    }
+	} else if( ims === "all" ){
+	    // use all images in this display
+	    ims = [];
+	    for(i=0; i<JS9.images.length; i++){
+		if( ims[i].display.id === that.id ){
+		    ims.push(ims[i]);
+		}
+	    }
+	} else {
+	    // hopefully, it's the id of an image
+	    ims = [ims];
+	}
+    } else if( !$.isArray(ims) ){
+	JS9.error("unknown input type for createMosaic()");
+    }
+    // sanity check
+    if( !ims.length ){
+	JS9.error("no images specified for createMosaic()");
+    }
+    // convert all string id ims to im objects
+    for(i=0; i<ims.length; i++){
+	if( typeof ims[i] === "string" ){
+	    im = JS9.lookupImage(ims[i]);
+	    if( im ){
+		ims[i] = im;
+	    } else {
+		JS9.error("unknown image for mosaic: " + ims[i]);
+	    }
+	}
+	im = ims[i];
+	// sanity check: they all require a virtual file
+	if( !im.raw.hdu || !im.raw.hdu.fits || !im.raw.hdu.fits.vfile ){
+	    JS9.error("no virtual file available for mosaic: " + im.id);
+	}
+    }
+    // could take a while ...
+    JS9.waiting(true, that);
+    window.setTimeout(function(){
+	var s, t;
+	var sw, naxis, rstr, inbuf, ext;
+	var vfile, ivfile, ovfile, bvfile, sect, topts;
+	var inlst, intbl, inhdr, inarr;
+	var binlst, bintbl;
+	var outlst, outtbl, outhdr, areafile, outfile;
+	var id = JS9.uniqueID();
+	var imsw = "-C"; // skip naxis[3,4]: they write garbage into the table
+	var mktmp = function(suffix){
+	    return "mosaic_" + id + "_" + suffix;
+	};
+	// temps files get unique names
+	inlst = mktmp("in.lst");
+	intbl = mktmp("in.tbl");
+	inhdr = mktmp("in.hdr");
+	binlst = mktmp("bin.lst");
+	bintbl = mktmp("bin.tbl");
+	outlst = mktmp("out.lst");
+	outtbl = mktmp("out.tbl");
+	outhdr = mktmp("out.hdr");
+	// output file name comes from the first image name
+	outfile = ims[0].id
+	    .replace(/\[.*\]/, "")
+	    .replace(/\.fz$/i, "")
+	    .replace(/\.gz$/i, "")
+	    .replace(/\.fits$/i, "_mosaic.fits");
+	// Montage temp areafile comes from the output file name
+	areafile = outfile.replace(/\.fits$/, "_area.fits");
+	// init cleanup array to make sure temp files get deleted
+	carr = [inlst, intbl, inhdr, binlst, bintbl,
+		outlst, outtbl, outhdr, areafile];
+	// generate input list from array of ims
+	s = sprintf("%s\n%s\n", line1, line2);
+	for(i=0; i<ims.length; i++){
+	    s += sprintf("%s\n", ims[i].raw.hdu.fits.vfile);
+	}
+	// save in list file
+	JS9.vfile(inlst, s);
+	// call the Mosaic/mImgtbl routine to make meta table
+	rstr = JS9.imgtbl(inlst, ".", intbl, imsw);
+	// check for errors
+	chkerr("mImgtbl", rstr);
+	// make sure input table actually has FITS files
+	if( !JS9.vsize(intbl) ){
+	    JS9.error("no image data found with which to construct a mosaic");
+	}
+	// make initial input header from input images
+	rstr = JS9.makehdr(intbl, inhdr, "");
+	// check for errors
+	chkerr("mMakeHdr", rstr);
+	// if we are using the js9helper, calculate a bin factor
+	if( opts.reduce === "js9" ){
+	    // calculate bin factor:
+	    // get input header as an array of cr-delimited lines
+	    s = JS9.vread(inhdr). split("\n");
+	    naxis = 0;
+	    // looks for dimensions of the image in this header
+	    for(i=0; i<s.length; i++){
+		t = s[i].split("=");
+		switch(t[0].trim()){
+		    case "NAXIS1":
+		    naxis = Math.max(naxis, parseFloat(t[1].trim()));
+		    break;
+		    case "NAXIS2":
+		    naxis = Math.max(naxis, parseFloat(t[1].trim()));
+		    break;
+		}
+	    }
+	    // bin based on image dims and desired mosaic dim
+	    bin = Math.max(1, Math.floor((naxis / opts.dim) + 0.5));
+	    // generate binned files, which become the input for reprojection
+	    s = sprintf("%s\n%s\n", line1, line2);
+	    // get array of input images
+	    inbuf = JS9.vread(intbl);
+	    // ignore the first 3 header lines
+	    inarr = inbuf.trim().split("\n");
+	    inarr.splice(0,3);
+	    // bin each image
+	    for(i=0; i<inarr.length; i++){
+		t = inarr[i].trim().split(/\s+/);
+		ext  = t[t.length-2];
+		vfile = t[t.length-1];
+		if( ext && vfile ){
+		    // section input file + extension
+		    ivfile = sprintf("%s[%s]", vfile, ext);
+		    // binned file name
+		    bvfile = sprintf("bin_%s_%s", ext, 
+				     vfile.replace(/\.(g|f)z$/, ""));
+		    // make sure binned file eventually gets deleted
+		    carr.push(bvfile);
+		    // section specification consists of bin factor
+		    sect = sprintf("0@0,0@0,%s", bin);
+		    log("bin %s [%s]", ivfile, bin);
+		    // extract a section at the specified bin factor
+		    JS9.imsection(ivfile, bvfile, sect, "");
+		    // add file to new input list
+		    s += sprintf("%s\n", bvfile);
+		}
+	    }
+	    // save in new image list file
+	    JS9.vfile(binlst, s);
+	    // call the Mosaic/mImgtbl routine
+	    rstr = JS9.imgtbl(binlst, ".", bintbl, imsw);
+	    // check for errors
+	    chkerr("mImgtbl", rstr);
+	    // make sure input table actually has FITS files
+	    if( !JS9.vsize(bintbl) ){
+		JS9.error("no image data found to construct a mosaic");
+	    }
+	    // make output header from binned images
+	    rstr = JS9.makehdr(bintbl, outhdr, "");
+	    // check for errors
+	    chkerr("mMakeHdr", rstr);
+	    // array of input images
+	    inbuf = JS9.vread(bintbl);
+	} else {
+	    // shrink inhdr to make outhdr
+	    rstr = JS9.shrinkhdr(opts.dim, inhdr, outhdr);
+	    // check for errors
+	    chkerr("mShrinkHdr", rstr);
+	    // array of input images
+	    inbuf = JS9.vread(intbl);
+	}
+	// ignore the first 3 header lines
+	inarr = inbuf.trim().split("\n");
+	inarr.splice(0,3);
+	// reproject and generate output list from reprojected files
+	s = sprintf("%s\n%s\n", line1, line2);
+	for(i=0; i<inarr.length; i++){
+	    t = inarr[i].trim().split(/\s+/);
+	    ext  = t[t.length-2];
+	    vfile = t[t.length-1];
+	    if( ext && vfile ){
+		if( opts.reduce === "shrink" ){
+		    // pass extension number in switches
+		    sw = sprintf("-h %s", ext);
+		} else {
+		    sw = "";
+		}
+		// output filename
+		ovfile = sprintf("reproj_%s_%s", ext, 
+				 vfile.replace(/\.(g|f)z$/, ""));
+		// add to the output file list
+		s += sprintf("%s\n", ovfile);
+		// make sure it eventually gets deleted
+		carr.push(ovfile);
+		// make sure associated area file eventually gets deleted
+		carr.push(ovfile.replace(/\.fits$/i, "_area.fits"));
+		// call Montage/reproject
+		log("reproject: %s [%s]", vfile, ext);
+		rstr = JS9.reproject(vfile, ovfile, outhdr, sw);
+		// check for errors
+		chkerr("mProjectPP", rstr);
+	    }
+	}
+	// save output list in file
+	JS9.vfile(outlst, s);
+	// call the Mosaic/mImgtbl routine
+	rstr = JS9.imgtbl(outlst, ".", outtbl, "");
+	// check for errors
+	chkerr("mImgtbl", rstr);
+	// make sure input table has FITS files
+	if( !JS9.vsize(outtbl) ){
+	    JS9.error("no FITS files were added to output table for mosaic");
+	}
+	// make the mosaic
+	log("create mosaic: %s", outfile);
+	rstr = JS9.madd(outtbl, outhdr, outfile, "");
+	// check for errors
+	chkerr("mAdd", rstr);
+	// cleanup temp files
+	cleanup();
+	// construct options
+	topts = $.extend(true, {}, JS9.fits.options, opts);
+	// we want the full image
+	topts.image = {xdim: 0, ydim: 0};
+	topts.file = outfile;
+	// process the newly retrieved data as FITS
+	JS9.fits.handleFITSFile(outfile, topts, disp);
+    }, JS9.SPINOUT);
+    // allow chaining
+    return this;
+};
+
+// ---------------------------------------------------------------------
 // JS9 Command, commands for console window
 // ---------------------------------------------------------------------
+
 JS9.Command = function(obj){
     var p;
     // copy properties to new object
@@ -8131,6 +8955,7 @@ JS9.Command.prototype.getWhich = function(args){
 // ---------------------------------------------------------------------
 // JS9 helper to manage connection to back-end services
 // ---------------------------------------------------------------------
+
 JS9.Helper = function(){
     // reset protocol for file:
     if( JS9.globalOpts.helperProtocol === "file:" ){
@@ -8183,11 +9008,20 @@ JS9.Helper.prototype.connect = function(type){
 	that.ready = true;
 	$(document).trigger("JS9:helperReady",
 			    {type: "socket.io", status: "error"});
-	if( JS9.DEBUG ){
-	    textStatus = textStatus || "timeout";
-	    if( !errorThrown || errorThrown === "timeout" ){
-		errorThrown = "or connection refused";
-	    }
+	textStatus = textStatus || "timeout";
+	if( !errorThrown || errorThrown === "timeout" ){
+	    errorThrown = "or connection refused";
+	}
+	if( errorThrown === textStatus  ){
+	    textStatus = "";
+	}
+	if( errorThrown === "error" ){
+	    errorThrown = "is the helper running?";
+	}
+	// thow error if needed
+	if( JS9.globalOpts.requireHelper ){
+	    JS9.error("helper connect error: " + textStatus + " " + errorThrown);
+	} else if( JS9.DEBUG ){
 	    JS9.log(sprintf("JS9 helper connect error: %s (%s)",
 			    textStatus, errorThrown));
 	}
@@ -8199,7 +9033,6 @@ JS9.Helper.prototype.connect = function(type){
 	    dataType: "script",
 	    timeout: JS9.globalOpts.htimeout,
 	    success:  function(){
-		var ii, d;
 		var sockopts = {
 		    reconnection: true,
 		    reconnectionDelay: 1000,
@@ -8207,19 +9040,28 @@ JS9.Helper.prototype.connect = function(type){
 		    reconnectionAttempts: 100,
 		    timeout: JS9.globalOpts.htimeout
 		};
+		// if there is no io object, we didn't really succeed
+		// this can happen, for example, in the Jupyter environment
+		if( typeof io === "undefined" ){
+		    failedHelper(null, "socket io object is undefined", null);
+		    return;
+		}
 		// connect to the helper
 		that.socket = io.connect(that.url, sockopts);
 		// on-event processing
 		that.socket.on("connect", function(){
+		    var ii, d, p;
 		    that.connected = true;
 		    that.helper = true;
 		    d = [];
 		    for(ii=0; ii<JS9.displays.length; ii++){
 			d.push(JS9.displays[ii].id);
 		    }
-		    that.socket.emit("initialize", {displays: d}, function(obj){
+		    p = that.pageid;
+		    that.socket.emit("initialize", {displays: d, pageid: p}, function(obj){
 			that.pageid = obj.pageid;
 			that.js9helper = obj.js9helper;
+			JS9.globalOpts.dataPathModify = obj.dataPathModify;
 			that.ready = true;
 			$(document).trigger("JS9:helperReady",
 					    {type: "socket.io", status: "OK"});
@@ -8244,12 +9086,22 @@ JS9.Helper.prototype.connect = function(type){
 			JS9.log("JS9 helper: connect timeout");
 		    }
 		});
-		that.socket.on("disconnect", function(){
+		that.socket.on("disconnect", function(reason){
 		    that.connected = false;
 		    that.helper = false;
 		    if( JS9.DEBUG > 1 ){
-			JS9.log("JS9 helper: disconnect");
+			JS9.log("JS9 helper: disconnect: " + reason);
 		    }
+		    // https://github.com/socketio/socket.io-client/blob/master/docs/API.md#event-disconnect
+		    if( reason === 'io server disconnect' ){
+			// the disconnection was initiated by the server,
+			// you need to reconnect manually
+			if( JS9.DEBUG > 1 ){
+			    JS9.log("JS9 helper: manual reconnect");
+			}
+			that.socket.connect();
+		    }
+		    // else the socket will automatically try to reconnect
 		});
 		that.socket.on("reconnect", function(){
 		    that.connected = true;
@@ -8364,7 +9216,9 @@ JS9.Helper.prototype.send = function(key, obj, cb){
     // add cookie value
     // add dataPath, if available (but always look in the helper directory)
     if( obj && (typeof obj === "object") ){
-	obj.cookie = document.cookie;
+	// wrap this in a try to catch CORS errors
+        try{ obj.cookie = document.cookie; }
+	catch(e){ delete obj.cookie; }
 	if( JS9.globalOpts.dataPath && !obj.dataPath ){
 	    obj.dataPath = JS9.globalOpts.dataPath + ":.";
 	}
@@ -8588,7 +9442,7 @@ JS9.Fabric.rescaleStrokeWidth = function(scale, sw1){
 	    JS9.Fabric.rescaleStrokeWidth.call(obj, scale, sw1);
 	});
     } else {
-	this.setStrokeWidth(sw1 / scale);
+	this.set("strokeWidth", sw1 / scale);
     }
 };
 
@@ -9035,9 +9889,10 @@ JS9.Fabric.newShapeLayer = function(layerName, layerOpts, divjq){
 // Shape prototype additions to JS9 Image class
 // ---------------------------------------------------------------------------
 
-// if mode is true, layer is displayed, otherwise hidden
+// showShapeLayer: if mode is true, layer is displayed, otherwise hidden
+// also an internal call that uses {local: true} to maybe hide/show layers
 // call using image context
-JS9.Fabric.showShapeLayer = function(layerName, mode){
+JS9.Fabric.showShapeLayer = function(layerName, mode, opts){
     var that = this;
     var left = 0;
     var jobj, xkey, layer, dlayer, canvas, objects, olen, obj;
@@ -9046,13 +9901,15 @@ JS9.Fabric.showShapeLayer = function(layerName, mode){
     if( !layer ){
 	return;
     }
+    // opts is optional
+    opts = opts || {};
     canvas = layer.canvas;
     dlayer = this.display.layers[layerName];
-    if( (mode === "show") || (mode === true) ){
-	if( mode === "show" ){
+    if( mode ){
+	// restore and show layer
+	if( !opts.local ){
 	    layer.show = true;
 	}
-	// show
 	if( layer.json && layer.show ){
 	    canvas.loadFromJSON(layer.json, function(){
 		var key, tdlayer, obj;
@@ -9105,8 +9962,10 @@ JS9.Fabric.showShapeLayer = function(layerName, mode){
 	if( !left ){
 	    this.resize = null;
 	}
-    } else if( (mode === "hide") || (mode === false) ){
-	// save and hide
+	// plugin callbacks
+	this.xeqPlugins("shape", "onshapelayershow", layerName);
+    } else {
+	// save and hide layer
 	if( layer.show ){
 	    // can't use forEachObject, which loops in ascending order,
 	    // because removing anchors changes the array destructively!
@@ -9134,14 +9993,10 @@ JS9.Fabric.showShapeLayer = function(layerName, mode){
 	    }
 	    canvas.clear();
 	}
-	if( mode === "hide" ){
+	if( !opts.local ){
 	    layer.show = false;
 	}
-    }
-    // plugin callbacks
-    if( (mode === "show") || (mode === true) ){
-	this.xeqPlugins("shape", "onshapelayershow", layerName);
-    } else {
+	// plugin callbacks
 	this.xeqPlugins("shape", "onshapelayerhide", layerName);
     }
     return this;
@@ -9160,7 +10015,7 @@ JS9.Fabric.displayShapeLayers = function(){
     if( this.display.image && this.display.image.layers ){
 	for( key in this.display.image.layers ){
 	    if( this.display.image.layers.hasOwnProperty(key) ){
-		this.display.image.showShapeLayer(key, false);
+		this.display.image.showShapeLayer(key, false, {local: true});
 	    }
 	}
     }
@@ -9168,7 +10023,40 @@ JS9.Fabric.displayShapeLayers = function(){
     if( this.layers ){
 	for( key in this.layers ){
 	    if( this.layers.hasOwnProperty(key) ){
-		this.showShapeLayer(key, true);
+		this.showShapeLayer(key, true, {local: true});
+	    }
+	}
+    }
+};
+
+// toggle display of active layers for the current image (save previous)
+// call using image context
+JS9.Fabric.toggleShapeLayers = function(){
+    var key, layer;
+    if( this.toggleLayers ){
+	// toggleLayers => we are currently hidden, so display them
+	for( key in this.layers ){
+	    if( this.layers.hasOwnProperty(key) ){
+		layer = this.layers[key];
+		if( layer && this.toggleLayers[key] ){
+		    this.showShapeLayer(key, true);
+		}
+	    }
+	}
+	delete this.toggleLayers;
+    } else {
+	// no toggleLayers => we are currently displayed, so hide them
+	this.toggleLayers = {};
+	for( key in this.layers ){
+	    if( this.layers.hasOwnProperty(key) ){
+		if( key === "crosshair" ){
+		    continue;
+		}
+		layer = this.layers[key];
+		if( layer && layer.show && layer.dlayer.dtype === "main" ){
+		    this.toggleLayers[key] = true;
+		    this.showShapeLayer(key, false);
+		}
 	    }
 	}
     }
@@ -9287,7 +10175,7 @@ JS9.Fabric.activeShapeLayer = function(s){
 // process options, separating into fabric opts and paramsJ
 // call using image context
 JS9.Fabric._parseShapeOptions = function(layerName, opts, obj){
-    var i, j, tags, pos, cpos, len, zoom;
+    var i, j, tags, pos, cpos, len, zoom, owcssys, txeq;
     var key, shape, radinc, nrad, radius, tf, arr;
     var nopts = {}, nparams = {};
     var YFUDGE = 1;
@@ -9395,7 +10283,30 @@ JS9.Fabric._parseShapeOptions = function(layerName, opts, obj){
 	if( typeof opts.dec === "string" ){
 	    opts.dec = JS9.saostrtod(opts.dec);
 	}
+	// make sure we have the right wcssys
+	if( opts.wcssys ){
+	    // from passed-in opts
+	    owcssys = this.getWCSSys();
+	    txeq = JS9.globalOpts.xeqPlugins;
+	    JS9.globalOpts.xeqPlugins = false;
+	    this.setWCSSys(opts.wcssys);
+	} else if( opts._wcssys ){
+	    // local override from parseRegions
+	    owcssys = this.getWCSSys();
+	    txeq = JS9.globalOpts.xeqPlugins;
+	    JS9.globalOpts.xeqPlugins = false;
+	    this.setWCSSys(opts._wcssys);
+	    // no longer needed or wanted
+	    delete opts._wcssys;
+	}
+	// convert to image coords
 	arr = JS9.wcs2pix(this.raw.wcs, opts.ra, opts.dec).trim().split(/ +/);
+	// restore original wcssys
+	if( owcssys ){
+	    this.setWCSSys(owcssys);
+	    JS9.globalOpts.xeqPlugins = txeq;
+	}
+	// convert to display coords
 	pos = this.imageToDisplayPos({x: parseFloat(arr[0]),
 				      y: parseFloat(arr[1])});
 	nopts.left = pos.x;
@@ -9718,6 +10629,7 @@ JS9.Fabric._parseShapeOptions = function(layerName, opts, obj){
 };
 
 // give an object full of keys, return an array of key names for export
+// call using image context
 JS9.Fabric._exportShapeOptions = function(opts){
     // sanity check
     if( typeof opts !== "object" ){
@@ -9762,7 +10674,13 @@ JS9.Fabric._exportShapeOptions = function(opts){
 	case "shape":
 	case "parent":
 	case "rtn":
+	case "_wcssys":
 	    return false;
+	case "text":
+	    if( opts.shape === "text" ){
+		return false;
+	    }
+	    return true;
 	default:
 	    return true;
 	}
@@ -9872,7 +10790,17 @@ JS9.Fabric.addShapes = function(layerName, shape, myopts){
     }
     // once a shape has been added, we can set the zindex to process events
     if( !canvas.size() ){
-        layer.zindex = this.zlayer++;
+	switch(layerName){
+	case JS9.Crosshair.LAYERNAME:
+	case JS9.Grid.LAYERNAME:
+	    // these should never cover any other interactive layer
+	    layer.zindex = 1;
+	    break;
+	default:
+	    // otherwise this layer goes to the top
+            layer.zindex = this.zlayer++;
+	    break;
+	}
 	dlayer = this.display.layers[layerName];
         dlayer.divjq.css("z-index", layer.zindex);
 	// we can now call the shape layer create plugin callbacks
@@ -9908,11 +10836,17 @@ JS9.Fabric.addShapes = function(layerName, shape, myopts){
 	    params.id = ++layer.nshape;
 	}
 	// get array of option names to export when saving regions
-	params.exports = JS9.Fabric._exportShapeOptions(myopts)
-	         .concat(JS9.Fabric._exportShapeOptions(sarr[ns]));
+	params.exports = JS9.Fabric._exportShapeOptions.call(this, myopts)
+	         .concat(JS9.Fabric._exportShapeOptions.call(this, sarr[ns]));
 	// no parents or children yet
 	params.parent = null;
 	params.children = [];
+	// if stroke (color) is defined, we probably need to convert it to hex
+	if( opts.stroke ){
+	    opts.color = opts.stroke;
+	    opts.stroke = JS9.colorToHex(opts.stroke);
+	}
+	// create the shape
 	switch(sobj.shape){
 	case "annulus":
 	    // save shape
@@ -10191,7 +11125,7 @@ JS9.Fabric._updateShape = function(layerName, obj, ginfo, mode, opts){
     pub.id = obj.params.id;
     pub.shape = obj.params.shape;
     pub.layer = layerName;
-    pub.color = obj.stroke;
+    pub.color = obj.color || obj.stroke;
     pub.tags = obj.params.tags;
     if( obj.params.parent ){
 	pub.parent = obj.params.parent.obj.params.id;
@@ -10209,17 +11143,17 @@ JS9.Fabric._updateShape = function(layerName, obj, ginfo, mode, opts){
     pub.y = ipos.y;
     // logical position
     pub.lcs = this.imageToLogicalPos(ipos);
-    // convenience variables
+    // wcs system and some convenience variables
     if( this.params.wcssys === "image" ){
+	pub.imsys = "image";
 	px = pub.x;
 	py = pub.y;
-	pub.imsys = "image";
 	bin = 1;
     } else {
+	pub.imsys = pub.lcs.sys;
 	px = pub.lcs.x;
 	py = pub.lcs.y;
-	pub.imsys = pub.lcs.sys;
-	bin = this.binning.bin;
+	bin = this.lcs.physical.reverse[0][0];
     }
     // display position
     pub.angle = -obj.angle;
@@ -10249,51 +11183,72 @@ JS9.Fabric._updateShape = function(layerName, obj, ginfo, mode, opts){
     case "annulus":
 	pub.shape = "annulus";
 	pub.radii = [];
+	if( pub.imsys !== "image" ){
+	    pub.lcs.radii = [];
+	}
 	pub.imstr = "annulus(" + tr(px) + ", " + tr(py) + ", ";
 	tstr = "annulus " + pub.x + " " + pub.y + " ";
 	objs = obj.getObjects();
 	olen = objs.length;
 	for(i=0; i<olen; i++){
-	    tval1 = objs[i].radius * scalex;
-	    radius = tval1 * bin;
-	    pub.imstr += tr(radius);
-	    tstr += (pub.x + " " +  pub.y + " " + (pub.x + tval1) + " " + pub.y + " ");
+	    radius = objs[i].radius * scalex;
+	    tval1 = radius * bin;
+	    pub.imstr += tr(tval1);
+	    tstr += (pub.x + " " +  pub.y + " " + (pub.x + radius) + " " + pub.y + " ");
 	    if( i === (olen - 1) ){
 		pub.imstr += ")";
 	    } else {
 		pub.imstr += ", ";
 	    }
 	    pub.radii.push(radius);
+	    if( pub.imsys !== "image" ){
+		pub.lcs.radii.push(tval1);
+	    }
 	}
 	break;
     case "box":
 	pub.shape = "box";
-	tval1 =  obj.width * scalex;
-	tval2 = obj.height * scaley;
-	pub.width =  tval1 * bin;
-	pub.height = tval2 * bin;
-	pub.imstr = "box(" + tr(px) + ", " + tr(py) + ", " + tr(pub.width) + ", " + tr(pub.height) + ", " + tr4(pub.angle) + ")";
-	tstr = "box " + pub.x + " " + pub.y + " " + pub.x + " " + pub.y + " " + (pub.x + tval1) + " " + pub.y + " " + pub.x + " " + pub.y + " " + pub.x + " " + (pub.y + tval2) + " " + (pub.angle * Math.PI / 180.0);
+	pub.width = obj.width * scalex;
+	pub.height = obj.height * scaley;
+	tval1 = pub.width * bin;
+	tval2 = pub.height * bin;
+	if( pub.imsys !== "image" ){
+	    pub.lcs.width = tval1;
+	    pub.lcs.height = tval2;
+	}
+	pub.imstr = "box(" + tr(px) + ", " + tr(py) + ", " + tr(tval1) + ", " + tr(tval2) + ", " + tr4(pub.angle) + ")";
+	tstr = "box " + pub.x + " " + pub.y + " " + pub.x + " " + pub.y + " " + (pub.x + pub.width) + " " + pub.y + " " + pub.x + " " + pub.y + " " + pub.x + " " + (pub.y + pub.height) + " " + (pub.angle * Math.PI / 180.0);
 	break;
     case "circle":
-	tval1 = obj.radius * scalex;
-	pub.radius = tval1 * bin;
-	pub.imstr = "circle(" + tr(px) + ", " + tr(py) + ", " + tr(pub.radius) + ")";
-	tstr = "circle " + pub.x + " " + pub.y + " " + pub.x + " " + pub.y + " " + (pub.x + tval1) + " " + pub.y;
+	pub.radius = obj.radius * scalex;
+	tval1 = pub.radius * bin;
+	if( pub.imsys !== "image" ){
+	    pub.lcs.radius = tval1;
+	}
+	pub.imstr = "circle(" + tr(px) + ", " + tr(py) + ", " + tr(tval1) + ")";
+	tstr = "circle " + pub.x + " " + pub.y + " " + pub.x + " " + pub.y + " " + (pub.x + pub.radius) + " " + pub.y;
 	break;
     case "ellipse":
-	tval1 = obj.width * scalex / 2;
-	tval2 = obj.height * scaley / 2;
-	pub.r1 = tval1 * bin;
-	pub.r2 = tval2 * bin;
-	pub.imstr = "ellipse(" + tr(px) + ", " + tr(py) + ", " + tr(pub.r1) + ", " + tr(pub.r2) + ", " + tr4(pub.angle) + ")";
-	tstr = "ellipse " + pub.x + " " + pub.y + " " + pub.x + " " + pub.y + " " + (pub.x + tval1) + " " + pub.y + " " + pub.x + " " + pub.y + " " + pub.x + " " + (pub.y + tval2) + " " + (pub.angle * Math.PI / 180.0);
+	pub.r1 = obj.width * scalex / 2;
+	pub.r2 = obj.height * scaley / 2;
+	tval1 = pub.r1 * bin;
+	tval2 = pub.r2 * bin;
+	if( pub.imsys !== "image" ){
+	    pub.lcs.r1 = tval1;
+	    pub.lcs.r2 = tval2;
+	}
+	pub.imstr = "ellipse(" + tr(px) + ", " + tr(py) + ", " + tr(tval1) + ", " + tr(tval2) + ", " + tr4(pub.angle) + ")";
+	tstr = "ellipse " + pub.x + " " + pub.y + " " + pub.x + " " + pub.y + " " + (pub.x + pub.r1) + " " + pub.y + " " + pub.x + " " + pub.y + " " + pub.x + " " + (pub.y + pub.r2) + " " + (pub.angle * Math.PI / 180.0);
 	break;
     case "point":
-	tval1 =  obj.width * scalex;
-	tval2 = obj.height * scaley;
-	pub.width =  tval1 * bin;
-	pub.height = tval2 * bin;
+	pub.width =  obj.width * scalex;
+	pub.height = obj.height * scaley;
+	tval1 = pub.width * bin;
+	tval2 = pub.height * bin;
+	if( pub.imsys !== "image" ){
+	    pub.lcs.width = tval1;
+	    pub.lcs.height = tval2;
+	}
 	pub.imstr = "point(" + tr(px) + ", " + tr(py) + ")";
 	tstr = "point " + pub.x + " " + pub.y;
 	break;
@@ -10302,7 +11257,9 @@ JS9.Fabric._updateShape = function(layerName, obj, ginfo, mode, opts){
 	pub.imstr = pub.shape + "(";
 	tstr = pub.shape + " ";
 	pub.pts = [];
-	pub.lcs.pts = [];
+	if( pub.imsys !== "image" ){
+	    pub.lcs.pts = [];
+	}
 	for(i=0; i<obj.points.length; i++){
 	    if( i > 0 ){
 		pub.imstr += ", ";
@@ -10340,9 +11297,9 @@ JS9.Fabric._updateShape = function(layerName, obj, ginfo, mode, opts){
 	}
         break;
     case "text":
-	pub.imstr = "text(" + tr(px) + ", " + tr(py) + ', "' + obj.text + '")';
+	pub.imstr = "text(" + tr(px) + ", " + tr(py) + ', "' + obj.text + '", ' + tr4(pub.angle) + ')';
+	tstr = "text " + pub.x + " " + pub.y + ' "' + obj.text + '"' + " " + (pub.angle * Math.PI / 180.0);
 	pub.text = obj.text;
-	tstr = "text " + pub.x + " " + pub.y + ' "' + obj.text + '"';
 	break;
     default:
 	break;
@@ -10424,8 +11381,9 @@ JS9.Fabric._updateShape = function(layerName, obj, ginfo, mode, opts){
     if( opts.nocb ){
 	return pub;
     }
-    // callbacks for regions (but not child regions)
-    if( !obj.params.parent && (mode !== "child") && (mode !== "list") ){
+    // callbacks for regions (but not child regions or some modes)
+    if( !obj.params.parent && (mode !== "child")    &&
+	(mode !== "move")  && (mode !== "mouseout") ){
 	// when xeqonchange is set
 	if( this.params.xeqonchange && layer.show && layer.opts.onchange ){
 	    try{
@@ -10506,6 +11464,10 @@ JS9.Fabric.getShapes = function(layerName, shape, opts){
     }
     // opts is optional
     opts = opts || {};
+    // return regions in text format, if necessary
+    if( layerName === "regions" && opts.format === "text" ){
+	return this.listRegions(shape, {mode: opts.mode || 1});
+    }
     // process the specified shapes
     this.selectShapes(layerName, shape, function(obj){
 	// public part of the shape
@@ -10574,10 +11536,16 @@ JS9.Fabric.changeShapes = function(layerName, shape, opts){
 	    }
 	}
 	// get new option names to export when saving regions
-	exports = JS9.Fabric._exportShapeOptions(opts).filter(function(item) {
-	    return !obj.params.exports.hasOwnProperty(item);
+	exports = JS9.Fabric._exportShapeOptions.call(this, opts)
+	    .filter(function(item) {
+		return !obj.params.exports.hasOwnProperty(item);
 	});
 	sobj.params.exports = obj.params.exports.concat(exports);
+	// if stroke (color) is defined, we probably need to convert it to hex
+	if( sobj.opts.stroke ){
+	    sobj.opts.color = sobj.opts.stroke;
+	    sobj.opts.stroke = JS9.colorToHex(sobj.opts.stroke);
+	}
 	// shape-specific pre-processing
 	switch(obj.params.shape){
 	case "text":
@@ -10761,16 +11729,16 @@ JS9.Fabric.refreshShapes = function(layerName){
 	    pos = that.logicalToDisplayPos(obj.pub.lcs);
 	}
 	// change region position
-	obj.setLeft(pos.x);
-	obj.setTop(pos.y);
+	obj.set("left", pos.x);
+	obj.set("top", pos.y);
 	// change angle if necessary
 	if( obj.params.shape !== "circle" && obj.params.shape !== "line"    &&
 	    obj.params.shape !== "point"  && obj.params.shape !== "polygon" &&
 	    obj.params.shape !== "text"                                     ){
 	    if( that.raw.wcsinfo && that.raw.wcsinfo.crot ){
-		obj.setAngle(-(obj.pub.angle + that.raw.wcsinfo.crot));
+		obj.set("angle", -(obj.pub.angle + that.raw.wcsinfo.crot));
 	    } else {
-		obj.setAngle(-obj.pub.angle);
+		obj.set("angle", -obj.pub.angle);
 	    }
 	}
 	// set scaling based on zoom factor, if necessary
@@ -11347,6 +12315,7 @@ JS9.Fabric.initGraphics = function(){
     JS9.Image.prototype.showShapeLayer = JS9.Fabric.showShapeLayer;
     JS9.Image.prototype.activeShapeLayer = JS9.Fabric.activeShapeLayer;
     JS9.Image.prototype.displayShapeLayers = JS9.Fabric.displayShapeLayers;
+    JS9.Image.prototype.toggleShapeLayers = JS9.Fabric.toggleShapeLayers;
     // print method which know about shapes
     JS9.Image.prototype.print = JS9.Fabric.print;
     // incorporate our defaults into fabric
@@ -11904,16 +12873,18 @@ JS9.Regions.opts = {
     configURL: "./params/regionsconfig.html",
     // should overlapping shapes be sorted (smallest on top)?
     sortOverlapping: true,
+    // title for region config dialog box
+    title: "Region Configuration",
     // colors for tags
     // these should be ordered from more specific to less specific
     tagcolors: {
-	include_source:     "#00FF00",
+	include_source:     "#C7D401",
 	exclude_source:     "#FF0000",
 	include_background: "#FFD700",
 	exclude_background: "#FF8C00",
-	source:             "#00FF00",
+	source:             "#C7D401",
 	background:         "#FFD700",
-	defcolor:           "#00FF00"
+	defcolor:           "#C7D401"
     },
     // mouse down processing
     onmousedown: function(im, xreg, evt, target){
@@ -11943,11 +12914,11 @@ JS9.Regions.opts = {
 		if( JS9.allinone ){
 		    target.params.winid = im.displayAnalysis("regions",
 			  JS9.allinone.regionsConfigHTML,
-			  {title: "Region Configuration"});
+			  {title: JS9.Regions.opts.title});
 		} else {
 		    target.params.winid = im.displayAnalysis("regions",
 			  JS9.InstallDir(JS9.Regions.opts.configURL),
-			  {title: "Region Configuration"});
+			  {title: JS9.Regions.opts.title});
 		}
 	    }
 	    return;
@@ -12001,6 +12972,7 @@ JS9.Regions.init = function(layerName){
     JS9.Image.prototype.saveRegions = JS9.Regions.saveRegions;
     JS9.Image.prototype.listRegions = JS9.Regions.listRegions;
     JS9.Image.prototype.copyRegions = JS9.Regions.copyRegions;
+    JS9.Image.prototype.editRegionTags = JS9.Regions.editRegionTags;
     JS9.Image.prototype.toggleRegionTags = JS9.Regions.toggleRegionTags;
     // init the display shape layer
     dlayer = this.display.newShapeLayer(layerName, JS9.Regions.opts);
@@ -12198,9 +13170,13 @@ JS9.Regions.initConfigForm = function(obj){
 	case "r1":
 	    switch(that.params.wcssys){
 	    case 'image':
-	    case 'physical':
 		if( obj.pub[key] !== undefined ){
 		    val = fmt(obj.pub[key]);
+		}
+		break;
+	    case 'physical':
+		if( obj.pub.lcs[key] !== undefined ){
+		    val = fmt(obj.pub.lcs[key]);
 		}
 		break;
 	    default:
@@ -12216,9 +13192,13 @@ JS9.Regions.initConfigForm = function(obj){
 	case "r2":
 	    switch(that.params.wcssys){
 	    case 'image':
-	    case 'physical':
 		if( obj.pub[key] !== undefined ){
 		    val = fmt(obj.pub[key]);
+		}
+		break;
+	    case 'physical':
+		if( obj.pub.lcs[key] !== undefined ){
+		    val = fmt(obj.pub.lcs[key]);
 		}
 		break;
 	    default:
@@ -12363,23 +13343,19 @@ JS9.Regions.initConfigForm = function(obj){
 	    mout = "mouseout";
 	}
 	$(".col_R").on(mover, function() {
-	    var html, nhtml;
+	    var title;
 	    var tooltip = $(this).find("input").data("tooltip");
 	    var el = $(this).closest(".dhtmlwindow").find(".drag-handle");
 	    if( tooltip && el.length ){
-		html = $(el).html();
-		nhtml = html.replace(/^[^\<]+/,
-				     "Region Configuration" + ": " + tooltip);
-		$(el).html(nhtml);
+		// change title: see dhtmlwindow.js load() @line 130
+		title = JS9.Regions.opts.title + ": " + tooltip;
+		$(el)[0].childNodes[0].nodeValue = title;
 	    }
 	});
 	$(".col_R").on(mout, function() {
-	    var html, nhtml;
 	    var el = $(this).closest(".dhtmlwindow").find(".drag-handle");
 	    if( el.length ){
-		html = $(el).html();
-		nhtml = html.replace(/^[^\<]+/, "Region Configuration");
-		$(el).html(nhtml);
+		$(el)[0].childNodes[0].nodeValue = JS9.Regions.opts.title;
 	    }
 	});
     }
@@ -12390,6 +13366,7 @@ JS9.Regions.initConfigForm = function(obj){
 JS9.Regions.processConfigForm = function(form, obj, winid, arr){
     var i, s, key, nkey, val, nval, nopts, altwcssys;
     var alen = arr.length;
+    var bin = 1;
     var opts = {};
     var wcsinfo = this.raw.wcsinfo || {cdelt1: 1, cdelt2: 1};
     var fmt= function(val){
@@ -12480,6 +13457,11 @@ JS9.Regions.processConfigForm = function(form, obj, winid, arr){
 	}
 	return parseFloat(s);
     };
+    // set physical to image conversion, if possible
+    if( this.lcs && this.lcs.physical ){
+	bin = this.lcs.physical.forward[0][0] || 1;
+    }
+    // process array of keyword/values
     for(i=0; i<alen; i++){
 	key = arr[i].name;
 	val = arr[i].value;
@@ -12592,9 +13574,13 @@ JS9.Regions.processConfigForm = function(form, obj, winid, arr){
 	case "r1":
 	    switch(this.params.wcssys){
 	    case 'image':
-	    case 'physical':
 		if( newval(obj, key, val) ){
 		    opts[key] = getval(val);
+		}
+		break;
+	    case 'physical':
+		if( newval(obj, key, val) ){
+		    opts[key] = getval(val) * bin;
 		}
 		break;
 	    default:
@@ -12615,9 +13601,13 @@ JS9.Regions.processConfigForm = function(form, obj, winid, arr){
 	case "r2":
 	    switch(this.params.wcssys){
 	    case 'image':
-	    case 'physical':
 		if( newval(obj, key, val) ){
 		    opts[key] = getval(val);
+		}
+		break;
+	    case 'physical':
+		if( newval(obj, key, val) ){
+		    opts[key] = getval(val) * bin;
 		}
 		break;
 	    default:
@@ -12903,10 +13893,12 @@ JS9.Regions.copyRegions = function(to, which){
 // call using image context
 JS9.Regions.parseRegions = function(s, opts){
     var regions = [];
-    var i, j, k, lines, obj, robj;
-    var owcssys, wcssys, iswcs, liswcs, pos, alen;
+    var i, j, k, lines, obj, robj, txeq;
+    var owcssys, owcsunits, wcssys, iswcs, liswcs, pos, alen;
     var regrexp = /(annulus)|(box)|(circle)|(ellipse)|(line)|(polygon)|(point)|(text)/;
     var wcsrexp = /(fk4)|(fk5)|(icrs)|(galactic)|(ecliptic)|(image)|(physical)/;
+    var imrexp = /(image)|(physical)/;
+    var unrexp = /[dr:]/;
     var parrexp = /\(\s*([^)]+?)\s*\)/;
     var seprexp = /\n|;/;
     var optsrexp = /(\{.*\})/;
@@ -12915,7 +13907,7 @@ JS9.Regions.parseRegions = function(s, opts){
     var comrexp  = /#(?![a-zA-Z0-9]{6}['"])/;
     // convert "0" to false and "1" to true
     var tf = function(s){
-	if( s === "0" ){return false;}
+	if( s === "0" || s === "false" ){return false;}
 	return true;
     };
     // ds9 compatibility: get properties from comment string
@@ -12953,6 +13945,7 @@ JS9.Regions.parseRegions = function(s, opts){
 	    move: function(v){return {movable: tf(v)};},
 	    rotate: function(v){return {rotatable: tf(v)};},
 	    resize: function(v){return {resizable: tf(v)};},
+	    changeable: function(v){return {changeable: tf(v)};},
 	    select: function(v){return {selectable: tf(v)};},
 	    text: function(v){return {text: v};},
 	    tag: function(v){return {tags: v};},
@@ -13053,16 +14046,22 @@ JS9.Regions.parseRegions = function(s, opts){
 	var vt, sarr, ox, oy;
 	var v1 = JS9.strtoscaled(ix);
 	var v2 = JS9.strtoscaled(iy);
-	// local override of wcs if we used sexagesimal
-	if( (v1.dtype === ":") || (v2.dtype === ":") ){
+	// local override of wcs if we used sexagesimal units or appended d,r
+	if( ((v1.dtype.match(unrexp)) || (v2.dtype.match(unrexp))) &&
+	    !owcssys.match(imrexp) ){
 	    liswcs = true;
+	    wcssys = owcssys;
 	}
 	if( iswcs || liswcs ){
-	    /* arg1 coords are hms, but ecliptic, galactic are deg */
-	    if( (v1.dtype === ":") &&
-		(wcssys !== "galactic") && (wcssys !== "ecliptic") ){
+	    // arg1 coords are hms, but ecliptic, galactic are deg
+	    if( (v1.dtype === ":" ) &&
+		(wcssys !== "galactic")  && (wcssys !== "ecliptic") ){
 		v1.dval *= 15.0;
 	    }
+	    // convert to degrees, if necessary
+	    if( v1.dtype === "r" ){ v1.dval = v1.dval * 180 / Math.PI; }
+	    if( v2.dtype === "r" ){ v2.dval = v2.dval * 180 / Math.PI; }
+	    // get image coordinates
 	    sarr = JS9.wcs2pix(this.raw.wcs, v1.dval, v2.dval).split(/ +/);
 	    ox = parseFloat(sarr[0]);
 	    oy = parseFloat(sarr[1]);
@@ -13081,11 +14080,17 @@ JS9.Regions.parseRegions = function(s, opts){
 	var cstr;
 	var v = JS9.strtoscaled(len);
 	var wcsinfo = this.raw.wcsinfo || {cdelt1: 1, cdelt2: 1};
+	// local override of wcs if we used sexagesimal units or appended d,r
+	if( v.dtype.match(unrexp) && !owcssys.match(imrexp) ){
+	    liswcs = true;
+	    wcssys = owcssys;
+	}
 	if( iswcs || liswcs ){
-	    if( v.dtype && (v.dtype !== ".") ){
-		cstr = "cdelt" + which;
-		v.dval = Math.abs(v.dval / wcsinfo[cstr]);
-	    }
+	    // convert to degrees, if necessary
+	    if( v.dtype === "r" ){ v.dval = v.dval * 180 / Math.PI; }
+	    // wcs-based size
+	    cstr = "cdelt" + which;
+	    v.dval = Math.abs(v.dval / wcsinfo[cstr]);
 	} else if( wcssys === "physical" ){
 	    // use the LTM1_1 value stored for logical to image transforms
 	    if( this.lcs && this.lcs.physical ){
@@ -13115,10 +14120,9 @@ JS9.Regions.parseRegions = function(s, opts){
     }
     // save original wcs
     owcssys = this.getWCSSys();
+    owcsunits = this.getWCSUnits();
     // this is the default wcs for regions
     wcssys = "physical";
-    // set default for regions
-    this.setWCSSys(wcssys);
     // do we have a real wcs?
     iswcs = (wcssys !== "image" && wcssys !== "physical");
     // get individual "lines" (new-line or semi-colon separated)
@@ -13144,6 +14148,13 @@ JS9.Regions.parseRegions = function(s, opts){
 		    pos = getipos.call(this, robj.args[0], robj.args[1]);
 		    obj.x = pos[0];
 		    obj.y = pos[1];
+		}
+		// if textOpts has ra, dec, save the wcssys, it may be
+		// different by the time textOpts gets processed
+		if( obj.textOpts                    &&
+		    obj.textOpts.ra  !== undefined  &&
+		    obj.textOpts.dec !== undefined  ){
+		    obj.textOpts._wcssys = wcssys;
 		}
 		// region arguments are optional
 		switch(robj.cmd){
@@ -13196,6 +14207,9 @@ JS9.Regions.parseRegions = function(s, opts){
 		    if( alen >= 3 ){
 			obj.text = getstr.call(this, robj.args[2]);
 		    }
+		    if( alen >= 4 ){
+			obj.angle = getang.call(this, robj.args[3]);
+		    }
 		    break;
 		default:
 		    break;
@@ -13210,7 +14224,10 @@ JS9.Regions.parseRegions = function(s, opts){
 		// if its a wcs command
 		if( robj.cmd.match(wcsrexp) ){
 		    // reset the wcs system
+		    txeq = JS9.globalOpts.xeqPlugins;
+		    JS9.globalOpts.xeqPlugins = false;
 		    this.setWCSSys(robj.cmd);
+		    JS9.globalOpts.xeqPlugins = txeq;
 		    // get new wcssys
 		    wcssys = this.getWCSSys();
 		    // is this a real wcs?
@@ -13222,7 +14239,11 @@ JS9.Regions.parseRegions = function(s, opts){
 	}
     }
     // restore original wcs
+    txeq = JS9.globalOpts.xeqPlugins;
+    JS9.globalOpts.xeqPlugins = false;
     this.setWCSSys(owcssys);
+    this.setWCSUnits(owcsunits);
+    JS9.globalOpts.xeqPlugins = txeq;
     // return the generated object
     return regions;
 };
@@ -13246,6 +14267,29 @@ JS9.Regions.saveRegions = function(fname, which, layer){
 	JS9.error("no saveAs function available to save region file");
     }
     return fname;
+};
+
+// change region tags, e.g. set source, delete background
+// e.g. im.changeRegionTags("selected", "source", "background");
+// call using image context
+JS9.Regions.editRegionTags = function(which, add1, rem1){
+    var i, j, s, tags;
+    var ntags = [];
+    s = this.getShapes("regions", which);
+    if( s.length ){
+	for(i=0; i<s.length; i++){
+	    tags = s[i].tags;
+	    // add the new tag
+	    ntags.push(add1);
+	    for(j=0; j<tags.length; j++){
+		// copy other tags, except the one we want to remove
+		if( tags[j] !== rem1 ){
+		    ntags.push(tags[j]);
+		}
+	    }
+	}
+	this.changeShapes("regions", which, {tags: ntags});
+    }
 };
 
 // toggle region tags, e.g. source <-> background, include <-> exclude
@@ -13326,11 +14370,636 @@ JS9.Catalogs.opts = {
     angle: 0,
     // these should be ordered from more specific to less specific
     tagcolors: {
-	defcolor:            "#00FF00"
+	defcolor:            "#C7D401"
     },
     // should overlapping shapes be sorted (smallest on top)?
     sortOverlapping: false
 };
+
+// ---------------------------------------------------------------------
+// Crosshair object displays a wcs-aligned crosshair on other displays
+// ---------------------------------------------------------------------
+
+JS9.Crosshair = {};
+JS9.Crosshair.CLASS = "JS9";
+JS9.Crosshair.NAME = "Crosshair";
+JS9.Crosshair.LAYERNAME = "crosshair";
+
+// defaults for crosshair layer
+JS9.Crosshair.opts = {
+    // override fabric defaults
+    hasControls: false,
+    hasRotatingPoint: false,
+    hasBorders: false,
+    // evented: false,
+    // user does not move the crosshair
+    lockMovementX: true,
+    lockMovementY: true,
+    lockRotation: true,
+    lockScalingX: true,
+    lockScalingY: true,
+    lockUniScaling: true,
+    selectable: false,
+    // canvas options
+    canvas: {
+	selection: false
+    },
+    // don't update WCS strings
+    updateWCS: false,
+    // pan and zoom enabled
+    panzoom: false,
+    // general
+    strokeWidth: 1,
+    // stroke color
+    color: "#C7D401",
+    // should overlapping shapes be sorted (smallest on top)?
+    sortOverlapping: false,
+    // where the crosshair is placed in order to hide it
+    hiddenPts: {pts: [{x: -9999, y: -9999}, {x: -9999, y: -9900}]}
+};
+
+// display: display crosshair as the mouse moves
+// eslint-disable-next-line no-unused-vars
+JS9.Crosshair.display = function(im, ipos, evt){
+    var i, s, arr, cim, ra, dec, w, h, x, y, hopts, vopts, shift;
+    var layername = JS9.Crosshair.LAYERNAME;
+    // for computers, shift key must be down
+    // for ipad, assume always true
+    if( /iPad|iPhone|iPod/.test(navigator.platform) ){
+	shift = true;
+    } else {
+	shift = evt.shiftKey;
+    }
+    // exit if crosshair is not enabled for this image
+    // exit if we are not actively tracking the crosshair via shift
+    if( !shift || !im ||
+	im.tmp.shiftKey || !im.crosshair || !im.params.crosshair ){
+	return;
+    }
+    w = im.raw.width;
+    h = im.raw.height;
+    x = im.ipos.x;
+    y = im.ipos.y;
+    // draw the crosshair, centered on the image pos
+    hopts = {pts: [{x: 0, y: y}, {x: w, y: y}], redraw: false};
+    im.changeShapes(layername, im.crosshair.h, hopts);
+    vopts = {pts: [{x: x, y: 0}, {x: x, y: h}], redraw: true};
+    im.changeShapes(layername, im.crosshair.v, vopts);
+    im.crosshair.visible = true;
+    // if crosshair mode is on and this image has wcs ...
+    if( JS9.globalOpts.wcsCrosshair && im && im.raw.wcs && im.raw.wcs > 0 ){
+	// get wcs coords of current mouse position
+	arr = JS9.pix2wcs(im.raw.wcs, ipos.x, ipos.y).trim().split(/\s+/);
+	ra = JS9.saostrtod(arr[0]);
+	if( (String.fromCharCode(JS9.saodtype()) === ":") &&
+	    (im.params.wcssys !== "galactic" )     &&
+	    (im.params.wcssys !== "ecliptic" )     ){
+	    ra *= 15.0;
+	}
+	dec = JS9.saostrtod(arr[1]);
+	// for each displayed image ...
+	for(i=0; i<JS9.displays.length; i++){
+	    cim = JS9.displays[i].image;
+	    if( cim && cim !== im                     &&
+		cim.crosshair && cim.params.crosshair &&
+		cim.raw.wcs > 0                       ){
+		// if the ra, dec pos is on this image, display crosshair
+		w = cim.raw.width;
+		h = cim.raw.height;
+		// convert wcs pos to image pos for this image
+		// trap uncaught errors => we were way off scale
+		try{ s = JS9.wcs2pix(cim.raw.wcs, ra, dec); }
+		catch(e){ s = null; }
+		if( s ){
+		    arr = s.trim().split(/\s+/);
+		    x = parseFloat(arr[0]);
+		    y = parseFloat(arr[1]);
+		    // if image pos is within the image boundaries ...
+		    if( x > 0 && x < w && y > 0 && y < h ){
+			// draw the crosshair, centered on the image pos
+			hopts = {pts: [{x: 0, y: y}, {x: w, y: y}],
+				 redraw:false};
+			cim.changeShapes(layername, cim.crosshair.h, hopts);
+			vopts = {pts: [{x: x, y: 0}, {x: x, y: h}],
+				redraw: true};
+			cim.changeShapes(layername, cim.crosshair.v, vopts);
+			cim.crosshair.visible = true;
+		    }
+		}
+	    }
+	}
+    }
+};
+
+// hide: move the crosshair out of the display
+// eslint-disable-next-line no-unused-vars
+JS9.Crosshair.hide = function(im, ipos, evt){
+    var layername = JS9.Crosshair.LAYERNAME;
+    var opts = JS9.Crosshair.opts.hiddenPts;
+    // if the crosshair is visble ...
+    if( im && im.crosshair && im.crosshair.visible ){
+	// move it off the display
+	im.changeShapes(layername, im.crosshair.h, opts);
+	im.changeShapes(layername, im.crosshair.v, opts);
+	im.crosshair.visible = false;
+    }
+};
+
+// image load: create the cross hair for this image
+JS9.Crosshair.create = function(im){
+    var opts = JS9.Crosshair.opts.hiddenPts;
+    var layername = JS9.Crosshair.LAYERNAME;
+    if( im && !im.crosshair && (im.raw.wcs > 0) ){
+	// create the crosshair object for this image
+	im.crosshair = {};
+	// create the crosshair, but don't display it yet
+	im.crosshair.h = im.addShapes(layername, "line", opts);
+	im.crosshair.v = im.addShapes(layername, "line", opts);
+	im.crosshair.visible = false;
+    }
+};
+
+// mark key actions that use the shift key
+JS9.Crosshair.keyaction = function(im, ipos, evt){
+    // add shiftKey marker, if necessary
+    if( im && evt && evt.shiftKey ){
+	im.tmp.shiftKey = true;
+    }
+};
+
+// unmark key action-based shift key use
+JS9.Crosshair.keyup = function(im, ipos, evt){
+    // remove shiftKey marker, if necessary
+    if( im && im.tmp.shiftKey && evt && !evt.shiftKey ){
+	delete im.tmp.shiftKey;
+    }
+};
+
+// init: create the shape layer for this display
+JS9.Crosshair.init = function(){
+    var i;
+    var layername = JS9.Crosshair.LAYERNAME;
+    // init the crosshair shape layer, but only once per display
+    for(i=0; i<JS9.displays.length; i++){
+	if( !JS9.displays[i].layers.crosshair ){
+	    JS9.displays[i].newShapeLayer(layername, JS9.Crosshair.opts);
+	}
+    }
+    return this;
+};
+
+// toggle display of crosshair
+JS9.Image.prototype.toggleCrosshair = function(){
+    this.params.crosshair = !this.params.crosshair;
+    if( !this.params.crosshair ){
+        JS9.Crosshair.hide(this);
+    }
+};
+
+// toggle display of wcs crosshair
+JS9.Image.prototype.toggleWCSCrosshair = function(){
+    JS9.globalOpts.wcsCrosshair = !JS9.globalOpts.wcsCrosshair;
+};
+
+// ---------------------------------------------------------------------
+// Grid object displays a wcs coordinate grid
+// ---------------------------------------------------------------------
+
+JS9.Grid = {};
+JS9.Grid.CLASS = "JS9";
+JS9.Grid.NAME = "Grid";
+JS9.Grid.LAYERNAME = "grid";
+
+// defaults for grids
+JS9.Grid.opts = {
+    // evented: false,
+    movable: false,
+    cover: "display",
+    reduceDims: true,
+    strokeWidth: 1,
+    margin:   0,
+    labelMargin: 10,
+    stride:  32,
+    raLines:  8,
+    raSkip:  0,
+    raAngle:  0,
+    decLines: 8,
+    decSkip: 0,
+    decAngle:  90,
+    sexaPrec: 1,
+    degPrec: 3,
+    lineColor: "#00FFFF",
+    labelColor: "#00FFFF",
+    labelFontFamily: "Helvetica, sans-serif",
+    labelFontSize: 11,
+    labelFontStyle: "normal",
+    labelFontWeight: 300,
+    labelRAOffx: 3,
+    labelRAOffy: -1,
+    labelDecOffx: -14,
+    labelDecOffy: 6
+};
+
+// this is the problem routine: hard to get a heuristic that will:
+// 1. pick a "natural" number of lines (depends on size of image)
+// 2. put the lines on "natural" wcs boundaries (.1 degree or every 10 arcsec)
+JS9.Grid.limits = function(opts, in0, in1, n){
+    var trange, tscale, out0, out1, outinc;
+    trange = in1 - in0;
+    if( trange > 1 ){
+	tscale = 10;
+    } else if( trange > 0.1 ){
+	tscale = 100;
+    } else if( trange > 0.01 ){
+	tscale = 1000;
+    } else if( trange > 0.001 ){
+	tscale = 10000;
+    } else if( trange > 0.0001 ){
+	tscale = 100000;
+    } else {
+	tscale = 1000000;
+    }
+    out0 = Math.floor(in0 * tscale) / tscale;
+    out1 = Math.ceil(in1 * tscale) / tscale;
+    outinc = Math.ceil(((out1 - out0) / n) * tscale) / tscale;
+    return {lo: out0, hi: out1, inc: outinc};
+};
+
+// generate label value
+JS9.Grid.getLabel = function(opts, v, which){
+    var i, t, idx, arr;
+    var doall = false;
+    switch(opts.wcsunits){
+    case "sexagesimal":
+	if( (which === "ra") &&
+	    ((opts.wcssys !== "galactic") && (opts.wcssys !== "ecliptic")) ){
+	    v /= 15.0;
+	}
+	t = JS9.saodtostr(v, ":", opts.sexaPrec);
+	arr = t.split(":");
+	if( opts.last[which] ){
+	    t = "";
+	    for(i=0; i<arr.length; i++){
+		if( t ){ t += ":"; }
+		if( doall || arr[i] !== opts.last[which][i] ){
+		    t += arr[i];
+		    doall = true;
+		}
+	    }
+	}
+	opts.last[which] = $.extend({}, arr);
+	break;
+    default:
+	t = v.toFixed(opts.degPrec);
+	break;
+    }
+    t = t.replace(/0+$/, "");
+    idx = t.indexOf(".");
+    if( idx < 0 ){
+	t += ".0";
+    } else if( idx === t.length -1 ){
+	t += "0";
+    }
+    t = t.replace(/:\.0/, ":0.0");
+    return t;
+};
+
+// generate and display a coordinate grid of Line shapes
+// call with image context
+JS9.Grid.display = function(mode, myopts){
+    var i, n, s, t, x, y, lineloc, arr, inc, got;
+    var ra, dec, ra0, ra1, dec0, dec1, rainc, decinc;
+    var raoffx, raoffy, decoffx, decoffy, raskip, decskip, lastra, lastdec;
+    var ratios, corners, opts;
+    var xrainc0, xrainc, xralim, xdecinc0, xdecinc, xdeclim, ipos, dpos;
+    var out = {};
+    var display = this.display;
+    var raw = this.raw;
+    var lims = [{ra:0, dec:0}, {ra:0, dec:0}, {ra:0, dec:0}, {ra:0, dec:0}];
+    // no arg: return current grid dispaly status
+    if( JS9.isNull(mode) ){
+	// toggle display
+	switch(this.tmp.gridStatus){
+	case "inactive":
+	case undefined:
+	    return false;
+	case "active":
+	case "processing":
+	    return true;
+	default:
+	    return true;
+	}
+    }
+    // delete previous grid
+    this.removeShapes(JS9.Grid.LAYERNAME);
+    // if false or no wcs, set inactive status and return
+    if( mode === false || !this.raw.wcs || this.raw.wcs <= 0 ){
+	this.tmp.gridStatus = "inactive";
+	return;
+    }
+    // local opts are optional
+    myopts = myopts || {};
+    if( typeof myopts === "string" ){
+	try{ myopts = JSON.parse(myopts); }
+	catch(e){ JS9.error("can't parse displayCoordGrid JSON", e); }
+    }
+    // we are actively creating a grid
+    this.tmp.gridStatus = "processing";
+    // get opts
+    opts = $.extend(true, {}, JS9.Grid.opts, myopts);
+    // labels will follow current wcs units
+    opts.wcsunits = this.getWCSUnits();
+    opts.wcssys = this.getWCSSys();
+    // keep track of labels as we go along
+    opts.last = {};
+    // wcslib wants degrees
+    JS9.wcsunits(this.raw.wcs, "degrees");
+    // if we will cover the whole image, change the ratio and corner values
+    if( opts.cover === "image" ){
+	ratios = [Math.max(1, Math.floor(raw.width  / display.width)),
+		  Math.max(1, Math.floor(raw.height / display.height))];
+	corners = [{x: 0, y: 0}, {x: raw.width-1, y: raw.height-1}];
+    } else {
+	if( opts.reduceDims ){
+	    if( raw.width < raw.height ){
+		ratios = [raw.width / raw.height, 1];
+	    } else if( raw.height < raw.width ){
+		ratios = [1, raw.height / raw.width];
+	    } else {
+		ratios = [1,1];
+	    }
+	} else {
+	    ratios = [1,1];
+	}
+	corners = [];
+	dpos = {x: this.ix + opts.margin,
+		y: this.iy - opts.margin};
+	ipos = this.displayToImagePos(dpos);
+	corners[0] = {x: ipos.x, y: ipos.y};
+	dpos = {x: display.width  - this.ix - opts.margin,
+		y: display.height - this.iy - opts.margin};
+	ipos = this.displayToImagePos(dpos);
+	corners[1] = {x: ipos.x, y: ipos.y};
+    }
+    // wcs coords at corners of display
+    s = JS9.pix2wcs(raw.wcs, corners[0].x, corners[0].y).trim().split(/\s+/);
+    lims[0].ra = JS9.saostrtod(s[0]);
+    lims[0].dec = JS9.saostrtod(s[1]);
+    s = JS9.pix2wcs(raw.wcs, corners[0].x, corners[1].y).trim().split(/\s+/);
+    lims[1].ra = JS9.saostrtod(s[0]);
+    lims[1].dec = JS9.saostrtod(s[1]);
+    s = JS9.pix2wcs(raw.wcs, corners[1].x, corners[0].y).trim().split(/\s+/);
+    lims[2].ra = JS9.saostrtod(s[0]);
+    lims[2].dec = JS9.saostrtod(s[1]);
+    s = JS9.pix2wcs(raw.wcs, corners[1].x, corners[1].y).trim().split(/\s+/);
+    lims[3].ra = JS9.saostrtod(s[0]);
+    lims[3].dec = JS9.saostrtod(s[1]);
+    ra0 = lims[0].ra;
+    dec0 = lims[0].dec;
+    ra1 = lims[0].ra;
+    dec1 = lims[0].dec;
+    // initial ra,dec limits in ascending order
+    for(i=1; i<4; i++){
+	ra0 = Math.min(ra0, lims[i].ra);
+	dec0 = Math.min(dec0, lims[i].dec);
+	ra1 = Math.max(ra1, lims[i].ra);
+	dec1 = Math.max(dec1, lims[i].dec);
+    }
+    // calculate normalized ra limits
+    out = JS9.Grid.limits.call(this, opts, ra0, ra1, opts.raLines*ratios[0]);
+    ra0 = out.lo;
+    ra1 = out.hi;
+    rainc = out.inc;
+    // find best line for RA labels
+    // calculate normalized dec limits
+    out = JS9.Grid.limits.call(this, opts, dec0, dec1, opts.decLines*ratios[1]);
+    dec0 = out.lo;
+    dec1 = out.hi;
+    decinc = out.inc;
+    // restore original values
+    JS9.wcsunits(this.raw.wcs, opts.wcsunits);
+    // loop limits
+    xrainc0 = Math.abs(this.raw.wcsinfo.cdelt1);
+    xrainc = xrainc0 * JS9.Grid.opts.stride;
+    xralim = ra1 - xrainc;
+    xdecinc0 = Math.abs(this.raw.wcsinfo.cdelt2);
+    xdecinc = xdecinc0 * JS9.Grid.opts.stride;
+    xdeclim = dec1 - xdecinc;
+    // start grid regions
+    s = "image;";
+    // lines of constant RA
+    for(ra=ra0; ra<=ra1; ra=ra+rainc){
+	t = "line(";
+	inc = xdecinc0;
+	lineloc = 0;
+	n = 0;
+        for(dec=dec0; dec<=dec1; dec=dec+inc){
+	    arr = JS9.wcs2pix(raw.wcs, ra, dec).trim().split(/ +/);
+	    if( arr && arr.length ){
+		x = parseFloat(arr[0]);
+		y = parseFloat(arr[1]);
+		if( x >= -opts.margin && x <= raw.width + opts.margin  && 
+		    y >= -opts.margin && y <= raw.height + opts.margin ){
+		    t += String(x + 1 + "," + y + 1 + ", ");
+		    n++;
+		    if( lineloc === 0 ){
+			lineloc = 1;
+			if( dec < xdeclim ){
+			    inc = xdecinc;
+			}
+		    } else if( lineloc === 1 ){
+			if( dec > xdeclim ){
+			    lineloc = 2;
+			    inc = xdecinc0;
+			}
+		    }
+		} else {
+		    if( lineloc === 1 ){
+			lineloc = 2;
+			dec = dec - inc;
+			inc = xdecinc0;
+		    }
+		}
+	    }
+	}
+	if( n > 1 ){
+	    s += t.replace(/,\s+$/, ") ");
+	    s += sprintf(' {"color": "%s"};', opts.lineColor);
+	}
+    }
+    // lines of constant Dec
+    for(dec=dec0; dec<=dec1; dec=dec+decinc){
+	t = "line(";
+	inc = xrainc0;
+	lineloc = 0;
+	n = 0;
+        for(ra=ra0; ra<=ra1; ra=ra+inc){
+	    arr = JS9.wcs2pix(raw.wcs, ra, dec).trim().split(/ +/);
+	    if( arr && arr.length ){
+		x = parseFloat(arr[0]);
+		y = parseFloat(arr[1]);
+		if( x >= -opts.margin && x <= raw.width + opts.margin  && 
+		    y >= -opts.margin && y <= raw.height + opts.margin ){
+		    t += String(x + 1 + "," + y + 1 + ", ");
+		    n++;
+		    if( lineloc === 0 ){
+			lineloc = 1;
+			if( ra < xralim ){
+			    inc = xrainc;
+			}
+		    } else if( lineloc === 1 ){
+			if( ra > xralim ){
+			    lineloc = 2;
+			    inc = xrainc0;
+			}
+		    }
+		} else {
+		    if( lineloc === 1 ){
+			lineloc = 2;
+			ra = ra - inc;
+			inc = xrainc0;
+		    }
+		}
+	    }
+	}
+	if( n > 1 ){
+	    s += t.replace(/,\s+$/, ") ");
+	    s += sprintf(' {"color": "%s"};', opts.lineColor);
+	}
+    }
+    // dec labels along constant ra line
+    decoffx = opts.labelDecOffx / this.rgb.sect.zoom;
+    decoffy = opts.labelDecOffy / this.rgb.sect.zoom;
+    decskip = 0;
+    lastra = ra0;
+    for(ra=ra0, got=0; ra<=ra1; ra=ra+rainc){
+	for(dec=dec0; dec<=dec1; dec=dec+decinc){
+	    arr = JS9.wcs2pix(raw.wcs, ra, dec).trim().split(/ +/);
+	    if( arr && arr.length ){
+		x = parseFloat(arr[0]);
+		y = parseFloat(arr[1]);
+		dpos = this.imageToDisplayPos({x: x, y: y});
+		if( dpos.x > (this.ix+opts.labelMargin) && dpos.x < (this.rgb.img.width+this.ix-opts.labelMargin) &&
+		    dpos.y > (this.iy+opts.labelMargin) && dpos.y < (this.rgb.img.height+this.iy-opts.labelMargin)){
+		    if( decskip >= opts.decSkip ){
+			s += sprintf('text(%s,%s,%s,%s) {"color":"%s", "fontFamily":"%s", "fontSize":%s, "fontStyle":"%s", "fontWeight":"%s", "originX":"left", "originY":"top"};',
+				 x + decoffx, y + decoffy,
+				 JS9.Grid.getLabel.call(this, opts, dec, "dec"),
+				 opts.decAngle,
+				 opts.labelColor,
+				 opts.labelFontFamily,
+				 opts.labelFontSize,
+				 opts.labelFontStyle,
+				 opts.labelFontWeight);
+			got++;
+		    } else {
+			if( ra !== lastra ){
+			    decskip++;
+			}
+			lastra = ra;
+		    }
+		}
+	    }
+	}
+	if( got ){
+	    break;
+	}
+    }
+    // ra labels along constant dec line
+    raoffx = opts.labelRAOffx / this.rgb.sect.zoom;
+    raoffy = opts.labelRAOffy / this.rgb.sect.zoom;
+    raskip = 0;
+    lastdec = dec0;
+    for(dec=dec0, got=0; dec<=dec1; dec=dec+decinc){
+	for(ra=ra0; ra<=ra1; ra=ra+rainc){
+	    arr = JS9.wcs2pix(raw.wcs, ra, dec).trim().split(/ +/);
+	    if( arr && arr.length ){
+		x = parseFloat(arr[0]);
+		y = parseFloat(arr[1]);
+		dpos = this.imageToDisplayPos({x: x, y: y});
+		if( dpos.x > (this.ix+opts.labelMargin) && dpos.x < (this.rgb.img.width+this.ix-opts.labelMargin) &&
+		    dpos.y > (this.iy+opts.labelMargin) && dpos.y < (this.rgb.img.height+this.iy-opts.labelMargin)){
+		    if( raskip >= opts.raSkip ){
+			s += sprintf('text(%s,%s,%s,%s) {"color":"%s", "fontFamily":"%s", "fontSize":%s, "fontStyle":"%s", "fontWeight":"%s", "originX":"left", "originY":"top"};',
+				 x + raoffx, y + raoffy,
+				 JS9.Grid.getLabel.call(this, opts, ra, "ra"),
+				 opts.raAngle,
+				 opts.labelColor,
+				 opts.labelFontFamily,
+				 opts.labelFontSize,
+				 opts.labelFontStyle,
+				 opts.labelFontWeight);
+			got++;
+		    } else {
+			if( dec !== lastdec ){
+			    raskip++;
+			}
+			lastdec = dec;
+		    }
+		}
+	    }
+	}
+	if( got ){
+	    break;
+	}
+    }
+    // add the grid shapes
+    this.addShapes(JS9.Grid.LAYERNAME, s, opts);
+    // grid is complete and active
+    this.tmp.gridStatus = "active";
+};
+
+// toggle grid on/off
+JS9.Grid.toggle = function(im){
+    // sanity check
+    if( !im ){
+	return;
+    }
+    // toggle display
+    switch(im.tmp.gridStatus){
+    case undefined:
+    case null:
+    case "inactive":
+	// start afresh
+	im.displayCoordGrid(true);
+	break;
+    case "active":
+	// clear the grid
+	im.displayCoordGrid(false);
+	break;
+    case "processing":
+    default:
+	break;
+    }
+};
+
+// display grid, as needed
+JS9.Grid.regrid = function(im){
+    if( im ){
+	// ignore if grid is not active or the image is not loaded
+	if( im.tmp.gridStatus !== "active" || im.status.load !== "complete" ){
+	    return;
+	}
+	// redraw the grid
+	im.displayCoordGrid(true);
+    }
+};
+
+// plugin init: load our grid methods
+// eslint-disable-next-line no-unused-vars
+JS9.Grid.init = function(opts){
+    var dlayer;
+    opts = $.extend(true, {}, JS9.Catalogs.opts, JS9.Grid.opts, opts);
+    // init the display shape layer
+    dlayer = this.display.newShapeLayer(JS9.Grid.LAYERNAME, opts);
+    // mouse up: no-op
+    dlayer.canvas.on("mouse:up", function(){
+	    return false;
+    });
+};
+
+// add to image prototypes
+JS9.Image.prototype.displayCoordGrid = JS9.Grid.display;
 
 // ---------------------------------------------------------------------
 // Utilities
@@ -13667,24 +15336,24 @@ JS9.floatPrecision = function(fval1, fval2){
 
 // convert float value to a string with decent precision
 // from: /tksao1.0/colorbar/colorbarbase.C
-JS9.floatFormattedString = function(fval, prec, fix){
+JS9.floatFormattedString = function(fval, prec, jj){
     var fmt;
     var s = "";
     if( fval === undefined ){
 	return s;
     }
-    if( prec < -2){
-	fmt = "%." + Math.min(Math.abs(prec),9) + "e";
+    if( prec < -2 ){
+	fmt = "%." + String(2+jj) + "e";
 	s = sprintf(fmt, fval);
-    } else if( prec < 0){
-	s = fval.toFixed(Math.abs(prec)+3);
-    } else if( prec < 2){
-	fmt = "%." + Math.abs(prec) + "f";
+    } else if( prec < 0 ){
+	s = fval.toFixed(Math.abs(prec)+3+jj);
+    } else if( prec < 2 ){
+	fmt = "%." + String(prec+jj) + "f";
 	s = sprintf(fmt, fval);
-    } else if( prec < 5){
-	s = fval.toFixed(fix);
+    } else if( prec < 5 ){
+	s = fval.toFixed(0+jj);
     } else {
-	fmt = "%." + Math.min(prec, 9) + "e";
+	fmt = "%." + String(2+jj) + "e";
 	s = sprintf(fmt, fval);
     }
     return s;
@@ -14124,7 +15793,7 @@ JS9.getFITSImage = function(fits, hdu, options, handler){
 // JS9.fits2repFile(display, file, opts, "png", "fits2png", func)
 // JS9.fits2repFile(display, file, opts, "fits", "imsection")
 JS9.fits2RepFile = function(display, file, opts, xtype, func){
-    var i, s, xdim, ydim, bin, obj;
+    var i, s, xdim, ydim, bin, binMode, obj;
     var xopts = {};
     var xmsg = "fits2" + xtype;
     var xcond = opts[xmsg] ||
@@ -14140,9 +15809,20 @@ JS9.fits2RepFile = function(display, file, opts, xtype, func){
     }
     // repfiles require a connected helper, a js9helper program, and a
     // socket.io connection
-    if( !JS9.helper.connected || !JS9.helper.js9helper ||
+    if( !JS9.helper.connected ||
 	(JS9.helper.type !== "nodejs" && JS9.helper.type !== "socket.io") ){
+	if(  xcond === "always" && JS9.globalOpts.requireFits2Fits ){
+	    JS9.error("can't run fits2fits without connected JS9 helper");
+	}
 	return false;
+    }
+    // if the helper program does not exist, we might want to throw an error
+    if( !JS9.helper.js9helper ){
+	if( JS9.globalOpts.requireFits2Fits ){
+	    JS9.error("js9helper not found for fits2fits processing");
+	} else {
+	    return false;
+	}
     }
     // sanity check and pre-processing
     switch(xmsg){
@@ -14151,6 +15831,9 @@ JS9.fits2RepFile = function(display, file, opts, xtype, func){
     case "fits2fits":
 	// requires a tmp workdir
 	if( !JS9.globalOpts.workDir ){
+	    if( JS9.globalOpts.requireFits2Fits ){
+		JS9.error("can't run fits2fits without a workdir");
+	    }
 	    return false;
 	}
 	xdim =
@@ -14165,13 +15848,23 @@ JS9.fits2RepFile = function(display, file, opts, xtype, func){
 	    opts.bin ||
 	    JS9.fits.options.image.bin ||
 	    JS9.fits.options.table.bin;
+	binMode = opts.binMode || JS9.globalOpts.binMode;
+	binMode = binMode === "a" ? "a" : "";
+	// handle string bin, possibly containing explicit binMode
+	if( typeof bin === "string" ){
+	    if( bin.match(/[as]$/) ){
+		binMode = bin.slice(-1);
+	    }
+	    bin = parseInt(bin, 10);
+	}
+	bin = Math.max(1, bin || 1);
 	if( opts.xcen !== undefined && opts.ycen !== undefined ){
-	    xopts.sect = sprintf("%s@%s,%s@%s,%s",
+	    xopts.sect = sprintf("%s@%s,%s@%s,%s%s",
 				 xdim, opts.xcen,
 				 ydim, opts.ycen,
-				 bin);
+				 bin, binMode);
 	} else {
-	    xopts.sect = sprintf("%s,%s,%s", xdim, ydim, bin);
+	    xopts.sect = sprintf("%s,%s,%s%s", xdim, ydim, bin, binMode);
 	}
 	s = xcond.toLowerCase().split(/[>,]/);
 	for(i=0; i<s.length; i++){
@@ -14218,8 +15911,7 @@ JS9.fits2RepFile = function(display, file, opts, xtype, func){
 	    switch(xmsg){
 	    case "fits2png":
 		// last line is the file name (ignore what comes before)
-		nfile = robj.stdout.replace(/\n*$/, "")
-		    .split("\n").pop();
+		nfile = robj.stdout.replace(/\n*$/, "").split("\n").pop();
 		next = nfile.split(".").pop().toLowerCase();
 		// is it a png file?
 		if( next === "png" ){
@@ -14232,6 +15924,14 @@ JS9.fits2RepFile = function(display, file, opts, xtype, func){
 		}
 		break;
 	    case "fits2fits":
+		// look for error condition, which we might throw or swallow
+		if( robj.stdout.match(/^ERROR:/) ){
+		    if( JS9.globalOpts.requireFits2Fits ){
+			JS9.error(robj.stdout);
+		    } else {
+			robj.stdout = xopts.fits;
+		    }
+		}
 		// output is file and possibly parentFile
 		rarr = robj.stdout.split(/\n/);
 		// file
@@ -14637,47 +16337,70 @@ JS9.cardpars = function(card){
 };
 
 // convert obj to FITS-style string
-JS9.raw2FITS = function(raw, forDisplay){
-    var i, obj, key, val, card, s, obp;
+JS9.raw2FITS = function(raw, opts){
+    var i, obj, key, val, card, ncard;
     var hasend=false;
     var t="";
+    var fixparam = function(card, name, val, comm){
+	var s, oval, regexp;
+	var ncard = card;
+	if( name === "XTENSION" && !val ){
+	    ncard = sprintf("%s  = %20s / %-47s",
+			    "SIMPLE",
+			    "T",
+			    "file does conform to FITS standard");
+
+	} else {
+	    regexp = new RegExp(name +  "*= *(-?[0-9][0-9]*) *");
+	    s = card.replace(regexp, "$1");
+	    oval = parseInt(s, 10);
+	    if( oval !== val ){
+		ncard = sprintf("%s  = %20s / %-47s", name, val, comm||"");
+	    }
+	}
+	return ncard;
+    };
     // sanity check
     if( !raw ){
 	return t;
     }
-    if( raw.card ){
-	// raw.card has comments, so use this if we are displaying header
-	for(i=0; i<raw.card.length; i++){
-	    card = raw.card[i];
-	    t += card;
-	    if( card.substring(0,4) === "END " ){
-		hasend = true;
-	    }
-	    if( forDisplay ){
-		t += "\n";
-	    }
+    // opts is optional
+    opts = opts || {};
+    // backward compatibility: orig. version used boolean to specify addcr
+    if( typeof opts === "boolean" ){
+	opts = {addcr: opts};
+    }
+    // raw.card and raw.cardstr contain comments, so use them if possible
+    if( raw.card || raw.cardstr ){
+	if( raw.card ){
+	    ncard = raw.card.length;
+	} else {
+	    ncard = raw.ncard;
 	}
-    } else if( raw.cardstr ){
-	// raw.cardstr has comments, so use this if we are displaying header
-	for(i=0; i<raw.ncard; i++){
-	    card = raw.cardstr.slice(i*80, (i+1)*80);
-	    // hack: if bitpix was changed by a raw data layer, fix it now
-	    if( card.match(/^BITPIX/) && raw.bitpix ){
-		s = card.replace(/BITPIX *= *(-?[0-9][0-9]*) */, "$1");
-		obp = parseInt(s, 10);
-		if( obp !== raw.bitpix ){
-		    t += sprintf("BITPIX  = %20s / %-47s",
-				 raw.bitpix, "bits/pixel");
-		} else {
-		    t += card;
-		}
+	for(i=0; i<ncard; i++){
+	    if( raw.card ){
+		card = raw.card[i].slice(0, 80);
+	    } else {
+		card = raw.cardstr.slice(i*80, (i+1)*80);
+	    }
+	    if( opts.notab && card.match(/^TAB(TYP|MIN|MAX|DIM)[1,2]/) ){
+		continue;
+	    }
+	    if( card.match(/^XTENSION/) && i === 0 && opts.simple ){
+		t += fixparam(card, "XTENSION");
+	    } else if( card.match(/^BITPIX/) && raw.bitpix ){
+		t += fixparam(card, "BITPIX", raw.bitpix, "bits/pixel");
+	    } else if( card.match(/^NAXIS1/) && raw.width ){
+		t += fixparam(card, "NAXIS1", raw.width, "x image dim");
+	    } else if( card.match(/^NAXIS2/) && raw.height ){
+		t += fixparam(card, "NAXIS2", raw.height, "y image dim");
 	    } else {
 		t += card;
 	    }
 	    if( card.substring(0,4) === "END " ){
 		hasend = true;
 	    }
-	    if( forDisplay ){
+	    if( opts.addcr ){
 		t += "\n";
 	    }
 	}
@@ -14702,7 +16425,7 @@ JS9.raw2FITS = function(raw, forDisplay){
 		val = "F";
 	    }
 	    t += sprintf("%-8s%-2s%-70s", "SIMPLE", "=", val);
-	    if( forDisplay ){ t += "\n"; }
+	    if( opts.addcr ){ t += "\n"; }
 	}
 	if( obj.BITPIX !== undefined || obj.bitpix !== undefined ){
 	    if( obj.BITPIX !== undefined ){
@@ -14711,7 +16434,7 @@ JS9.raw2FITS = function(raw, forDisplay){
 		val = obj.bitpix;
 	    }
 	    t += sprintf("%-8s%-2s%-70s", "BITPIX", "=", val);
-	    if( forDisplay ){ t += "\n"; }
+	    if( opts.addcr ){ t += "\n"; }
 	}
 	for( key in obj ){
 	    if( obj.hasOwnProperty(key) ){
@@ -14740,7 +16463,7 @@ JS9.raw2FITS = function(raw, forDisplay){
 		    }
 		    t += sprintf("%-8s%-2s%-70s", key, "=", val);
 		}
-		if( forDisplay ){
+		if( opts.addcr ){
 		    t += "\n";
 		}
 	    }
@@ -14749,7 +16472,7 @@ JS9.raw2FITS = function(raw, forDisplay){
     // add end card, if necessary
     if( !hasend ){
 	t += sprintf("%-8s%-72s", "END", " ");
-	if( forDisplay ){
+	if( opts.addcr ){
 	    t += "\n";
 	}
     }
@@ -15092,40 +16815,25 @@ JS9.Starbase = function(s, opts){
 };
 
 // http://stackoverflow.com/questions/1573053/javascript-function-to-convert-color-names-to-hex-codes
-JS9.colorToHex = function(colour){
-    var colours = {"aliceblue":"#f0f8ff","antiquewhite":"#faebd7","aqua":"#00ffff","aquamarine":"#7fffd4","azure":"#f0ffff",
-    "beige":"#f5f5dc","bisque":"#ffe4c4","black":"#000000","blanchedalmond":"#ffebcd","blue":"#0000ff","blueviolet":"#8a2be2","brown":"#a52a2a","burlywood":"#deb887",
-    "cadetblue":"#5f9ea0","chartreuse":"#7fff00","chocolate":"#d2691e","coral":"#ff7f50","cornflowerblue":"#6495ed","cornsilk":"#fff8dc","crimson":"#dc143c","cyan":"#00ffff",
-    "darkblue":"#00008b","darkcyan":"#008b8b","darkgoldenrod":"#b8860b","darkgray":"#a9a9a9","darkgreen":"#006400","darkkhaki":"#bdb76b","darkmagenta":"#8b008b","darkolivegreen":"#556b2f",
-    "darkorange":"#ff8c00","darkorchid":"#9932cc","darkred":"#8b0000","darksalmon":"#e9967a","darkseagreen":"#8fbc8f","darkslateblue":"#483d8b","darkslategray":"#2f4f4f","darkturquoise":"#00ced1",
-    "darkviolet":"#9400d3","deeppink":"#ff1493","deepskyblue":"#00bfff","dimgray":"#696969","dodgerblue":"#1e90ff",
-    "firebrick":"#b22222","floralwhite":"#fffaf0","forestgreen":"#228b22","fuchsia":"#ff00ff",
-    "gainsboro":"#dcdcdc","ghostwhite":"#f8f8ff","gold":"#ffd700","goldenrod":"#daa520","gray":"#808080","green":"#008000","greenyellow":"#adff2f",
-    "honeydew":"#f0fff0","hotpink":"#ff69b4",
-    "indianred ":"#cd5c5c","indigo":"#4b0082","ivory":"#fffff0","khaki":"#f0e68c",
-    "lavender":"#e6e6fa","lavenderblush":"#fff0f5","lawngreen":"#7cfc00","lemonchiffon":"#fffacd","lightblue":"#add8e6","lightcoral":"#f08080","lightcyan":"#e0ffff","lightgoldenrodyellow":"#fafad2",
-    "lightgrey":"#d3d3d3","lightgreen":"#90ee90","lightpink":"#ffb6c1","lightsalmon":"#ffa07a","lightseagreen":"#20b2aa","lightskyblue":"#87cefa","lightslategray":"#778899","lightsteelblue":"#b0c4de",
-    "lightyellow":"#ffffe0","lime":"#00ff00","limegreen":"#32cd32","linen":"#faf0e6",
-    "magenta":"#ff00ff","maroon":"#800000","mediumaquamarine":"#66cdaa","mediumblue":"#0000cd","mediumorchid":"#ba55d3","mediumpurple":"#9370d8","mediumseagreen":"#3cb371","mediumslateblue":"#7b68ee",
-    "mediumspringgreen":"#00fa9a","mediumturquoise":"#48d1cc","mediumvioletred":"#c71585","midnightblue":"#191970","mintcream":"#f5fffa","mistyrose":"#ffe4e1","moccasin":"#ffe4b5",
-    "navajowhite":"#ffdead","navy":"#000080",
-    "oldlace":"#fdf5e6","olive":"#808000","olivedrab":"#6b8e23","orange":"#ffa500","orangered":"#ff4500","orchid":"#da70d6",
-    "palegoldenrod":"#eee8aa","palegreen":"#98fb98","paleturquoise":"#afeeee","palevioletred":"#d87093","papayawhip":"#ffefd5","peachpuff":"#ffdab9","peru":"#cd853f","pink":"#ffc0cb","plum":"#dda0dd","powderblue":"#b0e0e6","purple":"#800080",
-    "rebeccapurple":"#663399","red":"#ff0000","rosybrown":"#bc8f8f","royalblue":"#4169e1",
-    "saddlebrown":"#8b4513","salmon":"#fa8072","sandybrown":"#f4a460","seagreen":"#2e8b57","seashell":"#fff5ee","sienna":"#a0522d","silver":"#c0c0c0","skyblue":"#87ceeb","slateblue":"#6a5acd","slategray":"#708090","snow":"#fffafa","springgreen":"#00ff7f","steelblue":"#4682b4",
-    "tan":"#d2b48c","teal":"#008080","thistle":"#d8bfd8","tomato":"#ff6347","turquoise":"#40e0d0",
-    "violet":"#ee82ee",
-    "wheat":"#f5deb3","white":"#ffffff","whitesmoke":"#f5f5f5",
-    "yellow":"#ffff00","yellowgreen":"#9acd32"};
+// NB: colors are augmented by /opt/X11//share/X11/rgb.txt
+JS9.colorToHex = function(color){
+    var arr;
+    var colors = {
+"aliceblue":"#f0f8ff","antiquewhite":"#faebd7","aqua":"#00ffff","aquamarine":"#7fffd4","azure":"#f0ffff","beige":"#f5f5dc","bisque":"#ffe4c4","black":"#000000","blanchedalmond":"#ffebcd","blue":"#0000ff","blueviolet":"#8a2be2","brown":"#a52a2a","burlywood":"#deb887","cadetblue":"#5f9ea0","chartreuse":"#7fff00","chocolate":"#d2691e","coral":"#ff7f50","cornflowerblue":"#6495ed","cornsilk":"#fff8dc","crimson":"#dc143c","cyan":"#00ffff","darkblue":"#00008b","darkcyan":"#008b8b","darkgoldenrod":"#b8860b","darkgray":"#a9a9a9","darkgreen":"#006400","darkkhaki":"#bdb76b","darkmagenta":"#8b008b","darkolivegreen":"#556b2f","darkorange":"#ff8c00","darkorchid":"#9932cc","darkred":"#8b0000","darksalmon":"#e9967a","darkseagreen":"#8fbc8f","darkslateblue":"#483d8b","darkslategray":"#2f4f4f","darkturquoise":"#00ced1","darkviolet":"#9400d3","deeppink":"#ff1493","deepskyblue":"#00bfff","dimgray":"#696969","dodgerblue":"#1e90ff","firebrick":"#b22222","floralwhite":"#fffaf0","forestgreen":"#228b22","fuchsia":"#ff00ff","gainsboro":"#dcdcdc","ghostwhite":"#f8f8ff","gold":"#ffd700","goldenrod":"#daa520","gray":"#808080","green":"#008000","greenyellow":"#adff2f","honeydew":"#f0fff0","hotpink":"#ff69b4","indianred ":"#cd5c5c","indigo":"#4b0082","ivory":"#fffff0","khaki":"#f0e68c","lavender":"#e6e6fa","lavenderblush":"#fff0f5","lawngreen":"#7cfc00","lemonchiffon":"#fffacd","lightblue":"#add8e6","lightcoral":"#f08080","lightcyan":"#e0ffff","lightgoldenrodyellow":"#fafad2","lightgrey":"#d3d3d3","lightgreen":"#90ee90","lightpink":"#ffb6c1","lightsalmon":"#ffa07a","lightseagreen":"#20b2aa","lightskyblue":"#87cefa","lightslategray":"#778899","lightsteelblue":"#b0c4de","lightyellow":"#ffffe0","lime":"#C7D401","limegreen":"#32cd32","linen":"#faf0e6","magenta":"#ff00ff","maroon":"#800000","mediumaquamarine":"#66cdaa","mediumblue":"#0000cd","mediumorchid":"#ba55d3","mediumpurple":"#9370d8","mediumseagreen":"#3cb371","mediumslateblue":"#7b68ee","mediumspringgreen":"#00fa9a","mediumturquoise":"#48d1cc","mediumvioletred":"#c71585","midnightblue":"#191970","mintcream":"#f5fffa","mistyrose":"#ffe4e1","moccasin":"#ffe4b5","navajowhite":"#ffdead","navy":"#000080","oldlace":"#fdf5e6","olive":"#808000","olivedrab":"#6b8e23","orange":"#ffa500","orangered":"#ff4500","orchid":"#da70d6","palegoldenrod":"#eee8aa","palegreen":"#98fb98","paleturquoise":"#afeeee","palevioletred":"#d87093","papayawhip":"#ffefd5","peachpuff":"#ffdab9","peru":"#cd853f","pink":"#ffc0cb","plum":"#dda0dd","powderblue":"#b0e0e6","purple":"#800080","rebeccapurple":"#663399","red":"#ff0000","rosybrown":"#bc8f8f","royalblue":"#4169e1","saddlebrown":"#8b4513","salmon":"#fa8072","sandybrown":"#f4a460","seagreen":"#2e8b57","seashell":"#fff5ee","sienna":"#a0522d","silver":"#c0c0c0","skyblue":"#87ceeb","slateblue":"#6a5acd","slategray":"#708090","snow":"#fffafa","springgreen":"#00ff7f","steelblue":"#4682b4","tan":"#d2b48c","teal":"#008080","thistle":"#d8bfd8","tomato":"#ff6347","turquoise":"#40e0d0","violet":"#ee82ee","wheat":"#f5deb3","white":"#ffffff","whitesmoke":"#f5f5f5","yellow":"#ffff00","yellowgreen":"#9acd3","antiquewhite1":"#ffefdb","antiquewhite2":"#eedfcc","antiquewhite3":"#cdc0b0","antiquewhite4":"#8b8378","cadetblue1":"#98f5ff","cadetblue2":"#8ee5ee","cadetblue3":"#7ac5cd","cadetblue4":"#53868b","darkgoldenrod1":"#ffb90f","darkgoldenrod2":"#eead0e","darkgoldenrod3":"#cd950c","darkgoldenrod4":"#8b6508","darkgrey":"#a9a9a9","darkolivegreen1":"#caff70","darkolivegreen2":"#bcee68","darkolivegreen3":"#a2cd5a","darkolivegreen4":"#6e8b3d","darkorange1":"#ff7f00","darkorange2":"#ee7600","darkorange3":"#cd6600","darkorange4":"#8b4500","darkorchid1":"#bf3eff","darkorchid2":"#b23aee","darkorchid3":"#9a32cd","darkorchid4":"#68228b","darkseagreen1":"#c1ffc1","darkseagreen2":"#b4eeb4","darkseagreen3":"#9bcd9b","darkseagreen4":"#698b69","darkslategray1":"#97ffff","darkslategray2":"#8deeee","darkslategray3":"#79cdcd","darkslategray4":"#528b8b","darkslategrey":"#2f4f4f","deeppink1":"#ff1493","deeppink2":"#ee1289","deeppink3":"#cd1076","deeppink4":"#8b0a50","deepskyblue1":"#00bfff","deepskyblue2":"#00b2ee","deepskyblue3":"#009acd","deepskyblue4":"#00688b","dimgrey":"#696969","dodgerblue1":"#1e90ff","dodgerblue2":"#1c86ee","dodgerblue3":"#1874cd","dodgerblue4":"#104e8b","hotpink1":"#ff6eb4","hotpink2":"#ee6aa7","hotpink3":"#cd6090","hotpink4":"#8b3a62","indianred":"#cd5c5c","indianred1":"#ff6a6a","indianred2":"#ee6363","indianred3":"#cd5555","indianred4":"#8b3a3a","lavenderblush1":"#fff0f5","lavenderblush2":"#eee0e5","lavenderblush3":"#cdc1c5","lavenderblush4":"#8b8386","lemonchiffon1":"#fffacd","lemonchiffon2":"#eee9bf","lemonchiffon3":"#cdc9a5","lemonchiffon4":"#8b8970","lightblue1":"#bfefff","lightblue2":"#b2dfee","lightblue3":"#9ac0cd","lightblue4":"#68838b","lightcyan1":"#e0ffff","lightcyan2":"#d1eeee","lightcyan3":"#b4cdcd","lightcyan4":"#7a8b8b","lightgoldenrod":"#eedd82","lightgoldenrod1":"#ffec8b","lightgoldenrod2":"#eedc82","lightgoldenrod3":"#cdbe70","lightgoldenrod4":"#8b814c","lightgray":"#d3d3d3","lightpink1":"#ffaeb9","lightpink2":"#eea2ad","lightpink3":"#cd8c95","lightpink4":"#8b5f65","lightsalmon1":"#ffa07a","lightsalmon2":"#ee9572","lightsalmon3":"#cd8162","lightsalmon4":"#8b5742","lightskyblue1":"#b0e2ff","lightskyblue2":"#a4d3ee","lightskyblue3":"#8db6cd","lightskyblue4":"#607b8b","lightslateblue":"#8470ff","lightslategrey":"#778899","lightsteelblue1":"#cae1ff","lightsteelblue2":"#bcd2ee","lightsteelblue3":"#a2b5cd","lightsteelblue4":"#6e7b8b","lightyellow1":"#ffffe0","lightyellow2":"#eeeed1","lightyellow3":"#cdcdb4","lightyellow4":"#8b8b7a","mediumorchid1":"#e066ff","mediumorchid2":"#d15fee","mediumorchid3":"#b452cd","mediumorchid4":"#7a378b","mediumpurple1":"#ab82ff","mediumpurple2":"#9f79ee","mediumpurple3":"#8968cd","mediumpurple4":"#5d478b","mistyrose1":"#ffe4e1","mistyrose2":"#eed5d2","mistyrose3":"#cdb7b5","mistyrose4":"#8b7d7b","navajowhite1":"#ffdead","navajowhite2":"#eecfa1","navajowhite3":"#cdb38b","navajowhite4":"#8b795e","navyblue":"#000080","olivedrab1":"#c0ff3e","olivedrab2":"#b3ee3a","olivedrab3":"#9acd32","olivedrab4":"#698b22","orangered1":"#ff4500","orangered2":"#ee4000","orangered3":"#cd3700","orangered4":"#8b2500","palegreen1":"#9aff9a","palegreen2":"#90ee90","palegreen3":"#7ccd7c","palegreen4":"#548b54","paleturquoise1":"#bbffff","paleturquoise2":"#aeeeee","paleturquoise3":"#96cdcd","paleturquoise4":"#668b8b","palevioletred1":"#ff82ab","palevioletred2":"#ee799f","palevioletred3":"#cd6889","palevioletred4":"#8b475d","peachpuff1":"#ffdab9","peachpuff2":"#eecbad","peachpuff3":"#cdaf95","peachpuff4":"#8b7765","rosybrown1":"#ffc1c1","rosybrown2":"#eeb4b4","rosybrown3":"#cd9b9b","rosybrown4":"#8b6969","royalblue1":"#4876ff","royalblue2":"#436eee","royalblue3":"#3a5fcd","royalblue4":"#27408b","seagreen1":"#54ff9f","seagreen2":"#4eee94","seagreen3":"#43cd80","seagreen4":"#2e8b57","skyblue1":"#87ceff","skyblue2":"#7ec0ee","skyblue3":"#6ca6cd","skyblue4":"#4a708b","slateblue1":"#836fff","slateblue2":"#7a67ee","slateblue3":"#6959cd","slateblue4":"#473c8b","slategray1":"#c6e2ff","slategray2":"#b9d3ee","slategray3":"#9fb6cd","slategray4":"#6c7b8b","slategrey":"#708090","springgreen1":"#00ff7f","springgreen2":"#00ee76","springgreen3":"#00cd66","springgreen4":"#008b45","steelblue1":"#63b8ff","steelblue2":"#5cacee","steelblue3":"#4f94cd","steelblue4":"#36648b","violetred":"#d02090","violetred1":"#ff3e96","violetred2":"#ee3a8c","violetred3":"#cd3278","violetred4":"#8b2252","webgray":"#808080","webgreen":"#008000","webgrey":"#808080","webmaroon":"#800000","webpurple":"#800080","x11gray":"#bebebe","x11green":"#C7D401","x11grey":"#bebebe","x11maroon":"#b03060","x11purple":"#a020f0","aquamarine1":"#7fffd4","aquamarine2":"#76eec6","aquamarine3":"#66cdaa","aquamarine4":"#458b74","azure1":"#f0ffff","azure2":"#e0eeee","azure3":"#c1cdcd","azure4":"#838b8b","bisque1":"#ffe4c4","bisque2":"#eed5b7","bisque3":"#cdb79e","bisque4":"#8b7d6b","blue1":"#0000ff","blue2":"#0000ee","blue3":"#0000cd","blue4":"#00008b","brown1":"#ff4040","brown2":"#ee3b3b","brown3":"#cd3333","brown4":"#8b2323","burlywood1":"#ffd39b","burlywood2":"#eec591","burlywood3":"#cdaa7d","burlywood4":"#8b7355","chartreuse1":"#7fff00","chartreuse2":"#76ee00","chartreuse3":"#66cd00","chartreuse4":"#458b00","chocolate1":"#ff7f24","chocolate2":"#ee7621","chocolate3":"#cd661d","chocolate4":"#8b4513","coral1":"#ff7256","coral2":"#ee6a50","coral3":"#cd5b45","coral4":"#8b3e2f","cornsilk1":"#fff8dc","cornsilk2":"#eee8cd","cornsilk3":"#cdc8b1","cornsilk4":"#8b8878","cyan1":"#00ffff","cyan2":"#00eeee","cyan3":"#00cdcd","cyan4":"#008b8b","firebrick1":"#ff3030","firebrick2":"#ee2c2c","firebrick3":"#cd2626","firebrick4":"#8b1a1a","gold1":"#ffd700","gold2":"#eec900","gold3":"#cdad00","gold4":"#8b7500","goldenrod1":"#ffc125","goldenrod2":"#eeb422","goldenrod3":"#cd9b1d","goldenrod4":"#8b6914","gray0":"#000000","gray1":"#030303","gray10":"#1a1a1a","gray100":"#ffffff","gray11":"#1c1c1c","gray12":"#1f1f1f","gray13":"#212121","gray14":"#242424","gray15":"#262626","gray16":"#292929","gray17":"#2b2b2b","gray18":"#2e2e2e","gray19":"#303030","gray2":"#050505","gray20":"#333333","gray21":"#363636","gray22":"#383838","gray23":"#3b3b3b","gray24":"#3d3d3d","gray25":"#404040","gray26":"#424242","gray27":"#454545","gray28":"#474747","gray29":"#4a4a4a","gray3":"#080808","gray30":"#4d4d4d","gray31":"#4f4f4f","gray32":"#525252","gray33":"#545454","gray34":"#575757","gray35":"#595959","gray36":"#5c5c5c","gray37":"#5e5e5e","gray38":"#616161","gray39":"#636363","gray4":"#0a0a0a","gray40":"#666666","gray41":"#696969","gray42":"#6b6b6b","gray43":"#6e6e6e","gray44":"#707070","gray45":"#737373","gray46":"#757575","gray47":"#787878","gray48":"#7a7a7a","gray49":"#7d7d7d","gray5":"#0d0d0d","gray50":"#7f7f7f","gray51":"#828282","gray52":"#858585","gray53":"#878787","gray54":"#8a8a8a","gray55":"#8c8c8c","gray56":"#8f8f8f","gray57":"#919191","gray58":"#949494","gray59":"#969696","gray6":"#0f0f0f","gray60":"#999999","gray61":"#9c9c9c","gray62":"#9e9e9e","gray63":"#a1a1a1","gray64":"#a3a3a3","gray65":"#a6a6a6","gray66":"#a8a8a8","gray67":"#ababab","gray68":"#adadad","gray69":"#b0b0b0","gray7":"#121212","gray70":"#b3b3b3","gray71":"#b5b5b5","gray72":"#b8b8b8","gray73":"#bababa","gray74":"#bdbdbd","gray75":"#bfbfbf","gray76":"#c2c2c2","gray77":"#c4c4c4","gray78":"#c7c7c7","gray79":"#c9c9c9","gray8":"#141414","gray80":"#cccccc","gray81":"#cfcfcf","gray82":"#d1d1d1","gray83":"#d4d4d4","gray84":"#d6d6d6","gray85":"#d9d9d9","gray86":"#dbdbdb","gray87":"#dedede","gray88":"#e0e0e0","gray89":"#e3e3e3","gray9":"#171717","gray90":"#e5e5e5","gray91":"#e8e8e8","gray92":"#ebebeb","gray93":"#ededed","gray94":"#f0f0f0","gray95":"#f2f2f2","gray96":"#f5f5f5","gray97":"#f7f7f7","gray98":"#fafafa","gray99":"#fcfcfc","green1":"#C7D401","green2":"#00ee00","green3":"#00cd00","green4":"#008b00","grey":"#bebebe","grey0":"#000000","grey1":"#030303","grey10":"#1a1a1a","grey100":"#ffffff","grey11":"#1c1c1c","grey12":"#1f1f1f","grey13":"#212121","grey14":"#242424","grey15":"#262626","grey16":"#292929","grey17":"#2b2b2b","grey18":"#2e2e2e","grey19":"#303030","grey2":"#050505","grey20":"#333333","grey21":"#363636","grey22":"#383838","grey23":"#3b3b3b","grey24":"#3d3d3d","grey25":"#404040","grey26":"#424242","grey27":"#454545","grey28":"#474747","grey29":"#4a4a4a","grey3":"#080808","grey30":"#4d4d4d","grey31":"#4f4f4f","grey32":"#525252","grey33":"#545454","grey34":"#575757","grey35":"#595959","grey36":"#5c5c5c","grey37":"#5e5e5e","grey38":"#616161","grey39":"#636363","grey4":"#0a0a0a","grey40":"#666666","grey41":"#696969","grey42":"#6b6b6b","grey43":"#6e6e6e","grey44":"#707070","grey45":"#737373","grey46":"#757575","grey47":"#787878","grey48":"#7a7a7a","grey49":"#7d7d7d","grey5":"#0d0d0d","grey50":"#7f7f7f","grey51":"#828282","grey52":"#858585","grey53":"#878787","grey54":"#8a8a8a","grey55":"#8c8c8c","grey56":"#8f8f8f","grey57":"#919191","grey58":"#949494","grey59":"#969696","grey6":"#0f0f0f","grey60":"#999999","grey61":"#9c9c9c","grey62":"#9e9e9e","grey63":"#a1a1a1","grey64":"#a3a3a3","grey65":"#a6a6a6","grey66":"#a8a8a8","grey67":"#ababab","grey68":"#adadad","grey69":"#b0b0b0","grey7":"#121212","grey70":"#b3b3b3","grey71":"#b5b5b5","grey72":"#b8b8b8","grey73":"#bababa","grey74":"#bdbdbd","grey75":"#bfbfbf","grey76":"#c2c2c2","grey77":"#c4c4c4","grey78":"#c7c7c7","grey79":"#c9c9c9","grey8":"#141414","grey80":"#cccccc","grey81":"#cfcfcf","grey82":"#d1d1d1","grey83":"#d4d4d4","grey84":"#d6d6d6","grey85":"#d9d9d9","grey86":"#dbdbdb","grey87":"#dedede","grey88":"#e0e0e0","grey89":"#e3e3e3","grey9":"#171717","grey90":"#e5e5e5","grey91":"#e8e8e8","grey92":"#ebebeb","grey93":"#ededed","grey94":"#f0f0f0","grey95":"#f2f2f2","grey96":"#f5f5f5","grey97":"#f7f7f7","grey98":"#fafafa","grey99":"#fcfcfc","honeydew1":"#f0fff0","honeydew2":"#e0eee0","honeydew3":"#c1cdc1","honeydew4":"#838b83","ivory1":"#fffff0","ivory2":"#eeeee0","ivory3":"#cdcdc1","ivory4":"#8b8b83","khaki1":"#fff68f","khaki2":"#eee685","khaki3":"#cdc673","khaki4":"#8b864e","magenta1":"#ff00ff","magenta2":"#ee00ee","magenta3":"#cd00cd","magenta4":"#8b008b","maroon1":"#ff34b3","maroon2":"#ee30a7","maroon3":"#cd2990","maroon4":"#8b1c62","orange1":"#ffa500","orange2":"#ee9a00","orange3":"#cd8500","orange4":"#8b5a00","orchid1":"#ff83fa","orchid2":"#ee7ae9","orchid3":"#cd69c9","orchid4":"#8b4789","pink1":"#ffb5c5","pink2":"#eea9b8","pink3":"#cd919e","pink4":"#8b636c","plum1":"#ffbbff","plum2":"#eeaeee","plum3":"#cd96cd","plum4":"#8b668b","purple1":"#9b30ff","purple2":"#912cee","purple3":"#7d26cd","purple4":"#551a8b","red1":"#ff0000","red2":"#ee0000","red3":"#cd0000","red4":"#8b0000","salmon1":"#ff8c69","salmon2":"#ee8262","salmon3":"#cd7054","salmon4":"#8b4c39","seashell1":"#fff5ee","seashell2":"#eee5de","seashell3":"#cdc5bf","seashell4":"#8b8682","sienna1":"#ff8247","sienna2":"#ee7942","sienna3":"#cd6839","sienna4":"#8b4726","snow1":"#fffafa","snow2":"#eee9e9","snow3":"#cdc9c9","snow4":"#8b8989","tan1":"#ffa54f","tan2":"#ee9a49","tan3":"#cd853f","tan4":"#8b5a2b","thistle1":"#ffe1ff","thistle2":"#eed2ee","thistle3":"#cdb5cd","thistle4":"#8b7b8b","tomato1":"#ff6347","tomato2":"#ee5c42","tomato3":"#cd4f39","tomato4":"#8b3626","turquoise1":"#00f5ff","turquoise2":"#00e5ee","turquoise3":"#00c5cd","turquoise4":"#00868b","wheat1":"#ffe7ba","wheat2":"#eed8ae","wheat3":"#cdba96","wheat4":"#8b7e66","yellow1":"#ffff00","yellow2":"#eeee00","yellow3":"#cdcd00","yellow4":"#8b8b00"
+    };
     var c;
-    if( !colour ){
+    if( !color ){
 	return "";
     }
-    c = colour.toLowerCase();
-    if( typeof colours[c] !== 'undefined' ){
-        return colours[c];
+    c = color.toLowerCase();
+    if( typeof colors[c] !== 'undefined' ){
+        return colors[c];
     }
-    return colour;
+    arr = color.match(/rgb\((\d+)[,\s]+(\d+)[,\s]+(\d+)\)/i);
+    if( arr ){
+	return sprintf("#%02x%02x%02x", arr[1], arr[2], arr[3]);
+    }
+    return color;
 };
 
 // convert string to double, returning (possibly scaled) value and delim
@@ -15156,10 +16864,6 @@ JS9.cleanPath = function(s){
     }
     return s.trim().replace(/\/\.\//, "/").replace(/^\.\//, "");
 };
-
-// ---------------------------------------------------------------------
-// End of Utilities
-// ---------------------------------------------------------------------
 
 // ---------------------------------------------------------------------
 // global event handlers
@@ -15339,14 +17043,21 @@ JS9.mouseMoveCB = function(evt){
     // reset the valpos object
     im.valpos = null;
     // in a region, update the region info
-    if( im.clickInRegion ){
+    if( im.clickInRegion && (im.clickInLayer === "regions") ){
 	sel = im.display.layers.regions.params.sel;
 	if( sel ){
+	    if( im.params.listonchange          ||
+		sel.params.listonchange         ||
+		JS9.globalOpts.intensivePlugins ){
+		im.updateShape("regions", sel, null, "move");
+	    }
+	    // list regions
 	    if( im.params.listonchange || sel.params.listonchange ){
-		im.updateShape(im.clickInLayer, sel, null, "list", true);
-		if( im.clickInLayer === "regions" ){
-		    im.listRegions("selected", {mode: 2});
-		}
+		im.listRegions("selected", {mode: 2});
+	    }
+	    // regions move callback
+	    if( JS9.globalOpts.intensivePlugins ){
+		im.xeqPlugins("region", "onregionsmove", sel.pub);
 	    }
 	}
     }
@@ -15469,9 +17180,20 @@ JS9.keyDownCB = function(evt){
     }
 };
 
+// keyup: assumes display obj is passed in evt.data
+JS9.keyUpCB = function(evt){
+    var display = evt.data;
+    var im = display.image;
+    if( im ){
+	// plugin callbacks
+	im.xeqPlugins("keypress", "onkeyup", evt);
+    }
+};
+
 // ---------------------------------------------------------------------
 // drag and drop event handlers
 // ---------------------------------------------------------------------
+
 JS9.dragenterCB = function(id, evt){
     evt.stopPropagation();
     evt.preventDefault();
@@ -15821,9 +17543,11 @@ JS9.initEmscripten = function(){
     if( JS9.globalOpts.useWasm          &&
 	typeof WebAssembly === 'object' &&
 	location.protocol !== "file:"   ){
-	JS9.globalOpts.astroemURL = JS9.InstallDir("astroemw.wasm");
+	// use site-specified file if available, else default file
+	JS9.globalOpts.astroemWasm =
+	    JS9.InstallDir(Module.wasmBinaryFile || "astroemw.wasm");
 	// load astroem wasm file
-	JS9.fetchURL(JS9.globalOpts.astroemURL, null, opts, function(data){
+	JS9.fetchURL(JS9.globalOpts.astroemWasm, null, opts, function(data){
 	    // tell Emscripten we already have wasm binary
 	    // eslint-disable-next-line no-unused-vars
 	    Module.wasmBinary = data;
@@ -15857,6 +17581,7 @@ JS9.initFITS = function(){
 	JS9.vheap = Astroem.vheap;
 	JS9.vmemcpy = Astroem.vmemcpy;
 	JS9.vfile = Astroem.vfile;
+	JS9.vread = Astroem.vread;
 	JS9.vunlink = Astroem.vunlink;
 	JS9.vsize = Astroem.vsize;
 	JS9.arrfile = Astroem.arrfile;
@@ -15870,10 +17595,17 @@ JS9.initFITS = function(){
 	JS9.wcs2pix = Astroem.wcs2pix;
 	JS9.reg2wcs = Astroem.reg2wcs;
 	JS9.saostrtod = Astroem.saostrtod;
+	JS9.saodtostr = Astroem.saodtostr;
 	JS9.saodtype = Astroem.saodtype;
 	JS9.zscale = Astroem.zscale;
 	JS9.tanhdr = Astroem.tanhdr;
 	JS9.reproject = Astroem.reproject;
+	JS9.madd = Astroem.madd;
+	JS9.imgtbl = Astroem.imgtbl;
+	JS9.makehdr = Astroem.makehdr;
+	JS9.shrinkhdr = Astroem.shrinkhdr;
+	JS9.imsection = Astroem.imsection;
+	JS9.regcnts = Astroem.regcnts;
 	JS9.fitsLibrary("cfitsio");
     } else if( window.hasOwnProperty("Fitsy") ){
 	JS9.fitsLibrary("fitsy");
@@ -16131,6 +17863,30 @@ JS9.initCommands = function(){
 	}
     }));
     JS9.checkNew(new JS9.Command({
+	name: "grid",
+	help: "set/get coordinate grid for current image",
+	get: function(){
+	    var msg;
+	    var im = this.image;
+	    if( im ){
+		msg = im.displayCoordGrid();
+	    }
+	    return msg ? "true" : "false";
+	},
+	set: function(args){
+	    var im = this.image;
+	    var mode;
+	    if( im ){
+		if( args[0].match(/true/i) ){
+		    mode = true;
+		} else {
+		    mode = false;
+		}
+		im.displayCoordGrid(mode, args[1]);
+	    }
+	}
+    }));
+    JS9.checkNew(new JS9.Command({
 	name: "help",
 	help: "get list of available commmands",
 	get: function(){
@@ -16296,6 +18052,23 @@ JS9.initCommands = function(){
 	}
     }));
     JS9.checkNew(new JS9.Command({
+	name: "regcnts",
+	help: "counts in regions for current image",
+	get: function(){
+	    var im = this.image;
+	    if( im ){
+		im.countsInRegions("$sregions", "$bregions",
+				   {lightwin: true});
+	    }
+	},
+	set: function(args){
+	    var im = this.image;
+	    if( im ){
+		return im.countsInRegions.apply(im, args);
+	    }
+	}
+    }));
+    JS9.checkNew(new JS9.Command({
 	name:   "regions",
 	alias:  "reg",
 	alias2: "region",
@@ -16373,7 +18146,6 @@ JS9.initCommands = function(){
 	    return JS9.scales.join(", ");
 	}
     }));
-
     JS9.checkNew(new JS9.Command({
 	name: "section",
 	help: "display section of current image",
@@ -16391,8 +18163,6 @@ JS9.initCommands = function(){
 	    }
 	}
     }));
-
-
     JS9.checkNew(new JS9.Command({
 	name: "status",
 	help: "get status for specified (or current) image",
@@ -16592,17 +18362,102 @@ JS9.initKeyboardActions = function(){
 	evt.preventDefault();
 	im.activeShapeLayer("regions");
     };
-    JS9.Keyboard.Actions["display full image"] = function(im, ipos, evt){
+    JS9.Keyboard.Actions["toggle active shape layers"] = function(im, ipos, evt){
 	// sanity check
 	if( !im ){ return; }
 	evt.preventDefault();
-	im.displaySection("full");
+	im.toggleShapeLayers();
+    };
+    // eslint-disable-next-line no-unused-vars
+    JS9.Keyboard.Actions["copy selected region to clipboard"] = function(im, ipos, evt){
+	var s;
+	// sanity check
+	if( !im ){ return; }
+	// get selected region(s)
+	s = im.listRegions("selected", {mode: 1});
+	// copy to clipboard
+	JS9.CopyToClipboard(s);
+	return s;
+    };
+    // eslint-disable-next-line no-unused-vars
+    JS9.Keyboard.Actions["copy all regions to clipboard"] = function(im, ipos, evt){
+	var s;
+	// sanity check
+	if( !im ){ return; }
+	// get all regions
+	s = im.listRegions("all", {mode: 1});
+	// copy to clipboard
+	JS9.CopyToClipboard(s);
+	return s;
+    };
+    // eslint-disable-next-line no-unused-vars
+    JS9.Keyboard.Actions["paste regions from local clipboard"] = function(im, ipos, evt){
+	var s;
+	var rregexp = /(annulus|box|circle|ellipse|line|polygon|point|text) *\(/;
+	// sanity check
+	if( !im ){ return; }
+	// try to get from clipboard
+	s = JS9.CopyFromClipboard();
+	// see if we have something valid
+	if( !s ){
+	    JS9.error("the local clipboard (which only holds data copied from within JS9) does not contain any content. Were you trying to paste something copied outside JS9? ");
+	}
+	if( s.match(rregexp) ){
+	    im.addShapes("regions", s);
+	} else {
+	    JS9.error("the local clipboard (which only holds data copied from within JS9) does not contain any regions");
+	}
+	return s;
     };
     JS9.Keyboard.Actions["refresh image"] = function(im, ipos, evt){
 	// sanity check
 	if( !im ){ return; }
 	evt.preventDefault();
 	im.refreshImage();
+    };
+    JS9.Keyboard.Actions["display full image"] = function(im, ipos, evt){
+	// sanity check
+	if( !im ){ return; }
+	evt.preventDefault();
+	im.displaySection("full");
+    };
+    // eslint-disable-next-line no-unused-vars
+    JS9.Keyboard.Actions["toggle coordinate grid"] = function(im, ipos, evt){
+	JS9.Grid.toggle(im);
+    };
+    // eslint-disable-next-line no-unused-vars
+    JS9.Keyboard.Actions["toggle crosshair"] = function(im, ipos, evt){
+	// sanity check
+	if( !im ){ return; }
+	evt.preventDefault();
+	im.params.crosshair = !im.params.crosshair;
+	if( !im.params.crosshair ){
+	    JS9.Crosshair.hide(im);
+	}
+    };
+    // eslint-disable-next-line no-unused-vars
+    JS9.Keyboard.Actions["toggle mouse/touch plugin"] = function(im, ipos, evt){
+	if( im ){
+	    im.display.displayPlugin("JS9MouseTouch");
+	}
+    };
+    // eslint-disable-next-line no-unused-vars
+    JS9.Keyboard.Actions["toggle keyboard actions plugin"] = function(im, ipos, evt){
+	if( im ){
+	    im.display.displayPlugin("JS9Keyboard");
+	}
+    };
+    // eslint-disable-next-line no-unused-vars
+    JS9.Keyboard.Actions["toggle preferences plugin"] = function(im, ipos, evt){
+	if( im ){
+	    im.display.displayPlugin("JS9Preferences");
+	}
+    };
+    // eslint-disable-next-line no-unused-vars
+    JS9.Keyboard.Actions["toggle shape layers plugin"] = function(im, ipos, evt){
+	if( im ){
+	    im.display.displayPlugin("JS9Layers");
+	}
     };
 };
 
@@ -16718,8 +18573,6 @@ JS9.init = function(){
     // if js9 prefs were defined/loaded explicitly, merge properties
     if( window.hasOwnProperty("JS9Prefs") && typeof JS9Prefs === "object" ){
 	JS9.mergePrefs(JS9Prefs);
-	// if we have regionOpts from preferences, add them to Regions.opts
-	$.extend(true, JS9.Regions.opts, JS9.regionOpts);
     } else {
 	// look for and load json pref files
 	// (set this to false in the page to avoid loading a prefs file)
@@ -16728,13 +18581,46 @@ JS9.init = function(){
 	    JS9.loadPrefs(JS9.InstallDir(JS9.PREFSFILE), 1);
 	    // load page preferences, if possible
 	    JS9.loadPrefs(JS9.PREFSFILE, 0);
-	    // if we have regionOpts from preferences, add them to Regions.opts
-	    $.extend(true, JS9.Regions.opts, JS9.regionOpts);
 	}
     }
+    // if JS9 prefs have regionOpts, transfer them to Regions.opts
+    if( JS9.hasOwnProperty("Regions") ){
+	$.extend(true, JS9.Regions.opts, JS9.regionOpts);
+    }
+    delete JS9.regionOpts;
+    // if JS9 prefs have catalogOpts, transfer them to Catalogs.opts
+    if( JS9.hasOwnProperty("Catalogs") ){
+	$.extend(true, JS9.Catalogs.opts, JS9.catalogOpts);
+    }
+    delete JS9.catalogOpts;
+    // if JS9 prefs have crosshairOpts, transfer them to Crosshair.opts
+    if( JS9.hasOwnProperty("Crosshair") ){
+	$.extend(true, JS9.Crosshair.opts, JS9.crosshairOpts);
+    }
+    delete JS9.crosshairOpts;
+    // if JS9 prefs have gridOpts, transfer them to Grid.opts
+    if( JS9.hasOwnProperty("Grid") ){
+	$.extend(true, JS9.Grid.opts, JS9.gridOpts);
+    }
+    delete JS9.gridOpts;
+    // if JS9 prefs have emscriptenOpts, transfer them to Module
+    if( JS9.hasOwnProperty("Module") ){
+	$.extend(true, Module, JS9.emscriptenOpts);
+    }
+    delete JS9.emscriptenOpts;
     // regularize resize params
     if( !JS9.globalOpts.resize ){
 	JS9.globalOpts.resizeHandle = false;
+    }
+    // backward compatibility (we moved this property 7/2018)
+    if( JS9.analOpts.prependJS9Dir !== undefined ){
+	JS9.globalOpts.prependJS9Dir = JS9.analOpts.prependJS9Dir;
+	delete JS9.analOpts.prependJS9Dir;
+    }
+    // backward compatibility (we moved this property 7/2018)
+    if( JS9.analOpts.dataDir !== undefined ){
+	JS9.globalOpts.dataDir = JS9.analOpts.dataDir;
+	delete JS9.analOpts.dataDir;
     }
     // turn off resize on mobile platforms
     if( JS9.BROWSER[3] ){
@@ -16864,6 +18750,22 @@ JS9.init = function(){
 		       JS9.Regions.init,
 		       {divArgs: ["regions"],
 			winDims: [0, 0]});
+    JS9.RegisterPlugin(JS9.Crosshair.CLASS, JS9.Crosshair.NAME,
+		       JS9.Crosshair.init,
+		       {onmousemove: JS9.Crosshair.display,
+			onkeyboardaction: JS9.Crosshair.keyaction,
+			onkeyup: JS9.Crosshair.keyup,
+			onimageload: JS9.Crosshair.create,
+			winDims: [0, 0]});
+    JS9.RegisterPlugin(JS9.Grid.CLASS, JS9.Grid.NAME,
+		       JS9.Grid.init,
+		       {onsetpan:      JS9.Grid.regrid,
+			onsetzoom:     JS9.Grid.regrid,
+			onsetwcssys:   JS9.Grid.regrid,
+			onsetwcsunits: JS9.Grid.regrid,
+			onimageload:   JS9.Grid.regrid,
+			onupdateprefs: JS9.Grid.regrid,
+			winDims:       [0, 0]});
     // find divs associated with each plugin and run the constructor
     JS9.instantiatePlugins();
     // sort plugins
@@ -16983,15 +18885,19 @@ JS9.mkPublic("GetWCSSys", "getWCSSys");
 JS9.mkPublic("SetWCSSys", "setWCSSys");
 JS9.mkPublic("ShowShapeLayer", "showShapeLayer");
 JS9.mkPublic("ActiveShapeLayer", "activeShapeLayer");
+JS9.mkPublic("ToggleShapeLayers", "toggleShapeLayers");
 JS9.mkPublic("AddShapes", "addShapes");
 JS9.mkPublic("RemoveShapes", "removeShapes");
 JS9.mkPublic("GetShapes", "getShapes");
 JS9.mkPublic("ChangeShapes", "changeShapes");
+JS9.mkPublic("DisplayCoordGrid", "displayCoordGrid");
 JS9.mkPublic("Print", "print");
 JS9.mkPublic("SavePNG", "savePNG");
 JS9.mkPublic("SaveJPEG", "saveJPEG");
 JS9.mkPublic("SaveFITS", "saveFITS");
 JS9.mkPublic("UploadFITSFile", "uploadFITSFile");
+JS9.mkPublic("CountsInRegions", "countsInRegions");
+JS9.mkPublic("RadialProfile", "radialProfile");
 JS9.mkPublic("RunAnalysis", "runAnalysis");
 JS9.mkPublic("RawDataLayer", "rawDataLayer");
 JS9.mkPublic("GaussBlurData", "gaussBlurData");
@@ -17845,7 +19751,13 @@ JS9.mkPublic("CopyToClipboard", function(text){
 	msg = "ERROR";
     }
     document.body.removeChild(textArea);
+    // save text for pseudo-pasting
+    JS9.clipboard = text;
     return msg;
+});
+
+JS9.mkPublic("CopyFromClipboard", function(){
+    return JS9.clipboard || "";
 });
 
 // bring up the file dialog box and open selected FITS file(s)
@@ -17983,7 +19895,7 @@ JS9.mkPublic("GetFITSHeader", function(flag){
     var im = JS9.getImage(obj.display);
     if( im && im.raw ){
 	flag = obj.argv[0];
-	s = JS9.raw2FITS(im.raw, flag);
+	s = JS9.raw2FITS(im.raw, {addcr: flag});
     }
     return s;
 });
@@ -18267,6 +20179,20 @@ JS9.mkPublic("SaveRegions", function(fname, which, layer){
     return null;
 });
 
+// edit region tags, e.g. add source, remove background
+// e.g. JS9.EditRegionTags("selected", "source", "background");
+JS9.mkPublic("EditRegionTags", function(which, add1, rem1){
+    var obj = JS9.parsePublicArgs(arguments);
+    var im = JS9.getImage(obj.display);
+    if( im ){
+	which = obj.argv[0];
+	add1 = obj.argv[1];
+	rem1 = obj.argv[2];
+	return im.editRegionTags(which, add1, rem1);
+    }
+    return null;
+});
+
 // toggle region tags, e.g. source <-> background, include <-> exclude
 // e.g. JS9.ToggleRegionTags("selected", "source", "background");
 JS9.mkPublic("ToggleRegionTags", function(which, x1, x2){
@@ -18341,11 +20267,42 @@ JS9.mkPublic("InstallDir", function(dir){
 
 // add new display divs and/or new plugins
 JS9.mkPublic("AddDivs", function(){
-    var i;
+    var i, j, div, dexist, id;
     var obj = JS9.parsePublicArgs(arguments);
+    // process all divs
     for(i=0; i< obj.argv.length; i++){
-	JS9.checkNew(new JS9.Display(obj.argv[i]));
+	// get next id
+	id = obj.argv[i];
+	// sanity check
+	if( !id ){
+	    continue;
+	}
+	// make sure this div exists ...
+	if( $("#" + id).length === 0 ){
+	    if( JS9.DEBUG ){
+		JS9.log("warning: can't find div, skipping AddDivs(): %s", id);
+	    }
+	    continue;
+	}
+	// ... but has not already been added
+	for(j=0; j<JS9.displays.length; j++){
+	    div = JS9.displays[j];
+	    if( div.id === id ){
+		dexist = true;
+		break;
+	    }
+	}
+	// add div as a new display
+	if( !dexist ){
+	    // add this display to array of displays
+	    JS9.checkNew(new JS9.Display(id));
+	    // tell helper about this display
+	    JS9.helper.send("addDisplay", {"display": id});
+	} else if( JS9.DEBUG ){
+	    JS9.log("warning: div already added, skipping AddDivs(): %s", id);
+	}
     }
+    // re-instantiate plugins
     JS9.instantiatePlugins();
 });
 
@@ -18396,13 +20353,33 @@ JS9.mkPublic("SelectDisplay", function(){
 });
 
 // gather images from other displays into this display
-JS9.mkPublic("GatherDisplay", function(){
+JS9.mkPublic("GatherDisplay", function(did, opts){
+    var display;
     var obj = JS9.parsePublicArgs(arguments);
-    var display = JS9.lookupDisplay(obj.argv[0] || obj.display);
+    switch(obj.argv.length){
+    case 0:
+	did = obj.display;
+	opts = null;
+	break;
+    case 1:
+	if( typeof obj.argv[0] === "object" ||
+	    (typeof obj.argv[0] === "string" && obj.argv[0].charAt(0) === "{")){
+	    did = obj.display;
+	    opts = obj.argv[0];
+	} else {
+	    did = obj.argv[0] || obj.display;
+	}
+	break;
+    default:
+	did = obj.argv[0] || obj.display;
+	opts = obj.argv[1];
+	break;
+    }
+    display = JS9.lookupDisplay(did);
     if( !display ){
 	JS9.error("invalid display for gather");
     }
-    JS9.Display.prototype.gather.call(display);
+    JS9.Display.prototype.gather.call(display, opts);
     return;
 });
 
@@ -18413,6 +20390,7 @@ JS9.mkPublic("SeparateDisplay", function(did, opts){
     switch(obj.argv.length){
     case 0:
 	did = obj.display;
+	opts = null;
 	break;
     case 1:
 	if( typeof obj.argv[0] === "object" ||
@@ -18649,6 +20627,17 @@ JS9.mkPublic("LoadCatalog", function(layer, file, opts){
     }
 });
 
+// create an image mosaic
+JS9.mkPublic("CreateMosaic", function(){
+    var obj = JS9.parsePublicArgs(arguments);
+    var display = JS9.lookupDisplay(obj.display);
+    var ims = obj.argv[0];
+    var opts = obj.argv[1];
+    if( display ){
+	return display.createMosaic(ims, opts);
+    }
+});
+
 // display the named plugin
 JS9.mkPublic("DisplayPlugin", function(name){
     var i, plugin, pname, lcname;
@@ -18707,6 +20696,43 @@ JS9.mkPublic("LightWindow", function(id, type, content, title, opts){
     title   = obj.argv[3] || "JS9 light window";
     opts    = obj.argv[4] || JS9.lightOpts.dhtml.textWin;
     return JS9.lightWin(id, type, content, title, opts);
+});
+
+// print window (Desktop JS9 only)
+// eslint-disable-next-line no-unused-vars
+JS9.mkPublic("WindowPrint", function(args){
+    var opts = {cmd: "print"};
+    var obj = JS9.parsePublicArgs(arguments);
+    if( obj.argv[0] ){
+	opts.opts = obj.argv[0];
+    }
+    if( window.isElectron && window.electronIPC ){
+	window.setTimeout(function(){
+	    try{ window.electronIPC.send("msg", opts); }
+	    catch(e){ JS9.error("could not print window", e); }
+	}, JS9.TIMEOUT);
+    } else {
+	JS9.error("WindowPrint is only available for the JS9 desktop app");
+    }
+});
+
+// save PDF of window (Desktop JS9 only)
+// eslint-disable-next-line no-unused-vars
+JS9.mkPublic("WindowToPDF", function(args){
+    var obj = JS9.parsePublicArgs(arguments);
+    var opts = {cmd: "pdf"};
+    opts.filename = obj.argv[0] || "js9.pdf";
+    if( obj.argv[1] ){
+	opts.opts = obj.argv[1];
+    }
+    if( window.isElectron && window.electronIPC ){
+	window.setTimeout(function(){
+	    try{ window.electronIPC.send("msg", opts); }
+	    catch(e){ JS9.error("could not create window pdf", e); }
+	}, JS9.TIMEOUT);
+    } else {
+	JS9.error("WindowToPDF is only available for the JS9 desktop app");
+    }
 });
 
 // end of Public Interface

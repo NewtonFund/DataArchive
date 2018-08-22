@@ -133,7 +133,7 @@ BEDIRS =	node_modules analysis-plugins analysis-wrappers
 
 WEBFILES =	js9.js js9.min.js js9worker.js \
 		js9support.js js9support.min.js js9support.css js9plugins.js \
-		js9support.txt js9.css fitsy.js fitsy.min.js \
+		js9support.txt js9usermenus.js js9.css fitsy.js fitsy.min.js \
 		$(ALLIN1).js $(ALLIN1).css \
 		js9Msg.js js9PostMessage.js js9Helper.js \
 		js9Electron.js js9ElectronPreload.js js9Regions.js \
@@ -157,7 +157,8 @@ PLCSSFILES =	plugins/core/blend.css plugins/core/blink.css \
 		plugins/core/divs.css \
 		plugins/core/imarith.css plugins/core/keyboard.css \
 		plugins/core/layers.css plugins/core/mef.css \
-		plugins/core/mousetouch.css plugins/core/toolbar.css
+		plugins/core/mousetouch.css plugins/core/separate.css \
+		plugins/core/toolbar.css
 
 JSFILES =	 js/winmod.js js/jquery.min.js js/jquery-ui.min.js js/jquery.contextMenu.min.js js/jquery.flot.min.js js/jquery.flot.errorbars.min.js js/jquery.flot.navigate.min.js js/jquery.flot.resize.min.js js/jquery.flot.selection.min.js js/flot-zoom.min.js js/sprintf.min.js js/dhtmlwindow.min.js js/dhtmlwindow_blurb.js js/fabric.min.js js/pako_inflate.min.js js/FileSaver.min.js js/canvas-toBlob.js js/tabcontent.js js/arrive.min.js js/jquery.doubletap.min.js js/jquery.flot.axislabels.js js/spin.js js/ElementQueries.js js/ResizeSensor.js js/gaussblur.js js/imagefilters.js js/jquery.ui.touch-punch.js js/js9inline.js
 
@@ -181,6 +182,7 @@ PLUGINFILES =	plugins/archive/archive.js \
 		plugins/core/menubar.js \
 		plugins/core/panner.js \
 		plugins/core/prefs.js \
+		plugins/core/separate.js \
 		plugins/core/toolbar.js \
 		plugins/imexam/imexam.js \
 		plugins/imexam/encircled.js \
@@ -663,6 +665,9 @@ cimtest.o:	cimtest.c
 
 configure:	configure.ac
 		autoconf
+
+astroem:	FORCE
+		@(make clean; cd astroem && make && make install && make clean)
 
 errcheck:	FORCE
 		@(egrep '[^x]error|warning|ld:|collect2:|make:' foo | \

@@ -15,7 +15,31 @@
 <div class="container">
 <center><h3>JS9 ChangeLog</h3></center>
 
-<h3> Public Release 2.1 (TBD)</h3>
+<h3> Release 2.2 (TBD)</h3>
+<ul>
+<li> add support for setting up a proxy from Apache to the Node.js helper
+<li> add Separate/Gather Images plugin
+<li> desktop app: add support for printing entire window
+<li> desktop app: add support for saving entire window to a pdf file
+<li> add support for loading all slices of a data cube separately into JS9
+<li> add support for user-defined menus in the Menubar
+<li> add support for averaging pixels when binning (def: summing)
+<li> add support for Mac-style menubars
+<li> add Edit menu to Menubar (copy/paste regions, positions, values)
+<li> add JS9.DisplayCoordGrid() and associated client-side task to Analysis menu
+<li> add JS9.CountsInRegions() and associated client-side task to Analysis menu
+<li> add JS9.RadialProfile(), and associated client-side task to Analysis menu
+<li> reproject will try to bin large images to avoid memory limits
+<li> add support for wcs-based cross-hair tracking of images
+<li> add support for displaying mosaic images
+<li> add CreateMosaic() public routine
+<li> remove .fz suffix in various places where it breaks things
+<li> fix bug where binning an image was not updating the CD matrix
+<li> update emscripten to v1.38.5
+<li> update socket.io to v2.1.1
+</ul>
+
+<h3> Public Release 2.1 (May 10, 2018)</h3>
 <ul>
 <li> allow JS9.SetPan() to accept a single object with x and y properties
 <li> allow JS9.WCSToPix() to accept a single object with ra and dec properties
@@ -510,7 +534,6 @@
 colormaps, external analysis, regions, wcs
 </ul>
 
-<h5>Last updated: June 8, 2016</h5>
 </div>
 
 </body>

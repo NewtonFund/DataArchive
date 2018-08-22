@@ -32,12 +32,15 @@ EMFLAGS	= 	-O3 --memory-init-file 0
 # cfitsio requires memory growth
 # but disable asm.js validation to avoid chrome slowdown with memory growth:
 # https://github.com/kripken/emscripten/wiki/Chrome-Perf-Issues
-EMOPTS =	-s TOTAL_MEMORY=67108864 -s ALLOW_MEMORY_GROWTH=1 -s ASM_JS=2
+EMOPTS =	-s TOTAL_MEMORY=67108864 -s ALLOW_MEMORY_GROWTH=1
+# asm.js instead of wasm:
+NOWASMOPTS =	-s WASM=0 -s ASM_JS=2
 # wasm support:
 WASMOPTS =	-s WASM=1
+# debugging
 # WASMOPTS =	-s WASM=1 -s SAFE_HEAP=1 -s ASSERTIONS=1
 
-EMEXPORTS =	-s EXPORTED_FUNCTIONS="['_initwcs', '_freewcs', '_wcsinfo', '_pix2wcsstr', '_wcs2pixstr', '_reg2wcsstr', '_wcssys', '_wcsunits', '_saostrtod', '_saodtype', '_zscale', '_gzopen', '_gzread', '_gzwrite', '_gzclose', '_gzseek',  '_BZ2_bzopen', '_BZ2_bzread', '_BZ2_bzwrite', '_BZ2_bzclose', '_openFITSFile', '_openFITSMem', '_getImageToArray', '_filterTableToImage', '_getHeaderToString', '_closeFITSFile', '_maxFITSMemory', '_ffgerr', '_ffmahd', '_ffghdn','_ffmnhd', '_ffghdt', '_ffgky', '_fffree', '_listhdu', '_tanhdr', '_reproject', '_vls', '_vcat']" -s EXTRA_EXPORTED_RUNTIME_METHODS="['ccall', 'cwrap', 'writeArrayToMemory']"
+EMEXPORTS =	-s EXPORTED_FUNCTIONS="['_initwcs', '_freewcs', '_wcsinfo', '_pix2wcsstr', '_wcs2pixstr', '_reg2wcsstr', '_wcssys', '_wcsunits', '_saostrtod', '_saodtostr', '_saodtype', '_zscale', '_gzopen', '_gzread', '_gzwrite', '_gzclose', '_gzseek',  '_BZ2_bzopen', '_BZ2_bzread', '_BZ2_bzwrite', '_BZ2_bzclose', '_openFITSFile', '_openFITSMem', '_getImageToArray', '_filterTableToImage', '_getHeaderToString', '_closeFITSFile', '_maxFITSMemory', '_ffgerr', '_ffmahd', '_ffghdn','_ffmnhd', '_ffghdt', '_ffgky', '_fffree', '_listhdu', '_tanhdr', '_reproject', '_madd', '_imgtbl', '_makehdr', '_shrinkhdr', '_imsection', '_imannulusi', '_imboxi', '_imcirclei', '_imellipsei', '_imfieldi', '_imlinei', '_impiei', '_imqtpiei', '_impointi', '_impandai', '_imnannulusi', '_imnboxi', '_imnellipsei', '_imnpiei', '_impolygoni', '_imvannulusi', '_imvboxi', '_imvellipsei', '_imvpiei', '_imvpointi', '_imannulus', '_imbox', '_imcircle', '_imellipse', '_imfield', '_imline', '_impie', '_imqtpie', '_impoint', '_impanda', '_imnannulus', '_imnbox', '_imnellipse', '_imnpie', '_impolygon', '_imvannulus', '_imvbox', '_imvellipse', '_imvpie', '_imvpoint', '_regcnts', '_vls', '_vcat']" -s EXTRA_EXPORTED_RUNTIME_METHODS="['ccall', 'cwrap', 'writeArrayToMemory']"
 
 # include directories
 EMINCS =	-I./include
@@ -52,13 +55,17 @@ OBJS = 		$(SRCS:%.c=%.o)
 # wrapper for cfitsio
 JSFITSIO =	./jsfitsio
 JSRCS =  	$(JSFITSIO)/jsfitsio.c $(JSFITSIO)/healpix.c \
-		$(JSFITSIO)/listhdu.c
+		$(JSFITSIO)/listhdu.c ../js9helper.c
 JOBJS = 	$(JSRCS:%.c=%.o)
 
 # montage (re-project)
 MONTAGE =	./montage
-MSRCS =		$(MONTAGE)/mProjectPP_nomain.c \
-		$(MONTAGE)/mTANHdr_nomain.c \
+MSRCS =		$(MONTAGE)/mProjectPP.c \
+		$(MONTAGE)/mTANHdr.c \
+		$(MONTAGE)/mAdd.c \
+		$(MONTAGE)/mImgtbl.c \
+		$(MONTAGE)/mMakeHdr.c \
+		$(MONTAGE)/mShrinkHdr.c \
 		$(MONTAGE)/overlapAreaPP.c \
 		$(MONTAGE)/debugCheck.c \
 		$(MONTAGE)/checkHdr.c \
@@ -67,13 +74,25 @@ MSRCS =		$(MONTAGE)/mProjectPP_nomain.c \
 		$(MONTAGE)/distort.c \
 		$(MONTAGE)/undistort.c \
 		$(MONTAGE)/initdistdata.c \
-		$(MONTAGE)/redefine_pointing.c
+		$(MONTAGE)/redefine_pointing.c \
+		$(MONTAGE)/boundaries.c \
+		$(MONTAGE)/get_files.c \
+		$(MONTAGE)/get_hdr.c \
+		$(MONTAGE)/print_rec.c \
+		$(MONTAGE)/convertCoordinates.c \
+		$(MONTAGE)/convertBesselianJulian.c \
+		$(MONTAGE)/convertEclEqu.c \
+		$(MONTAGE)/convertEquGal.c \
+		$(MONTAGE)/convertGalSgal.c \
+		$(MONTAGE)/computeFKCorrections.c \
+		$(MONTAGE)/precessBesselian.c \
+		$(MONTAGE)/precessJulian.c \
+		$(MONTAGE)/ccalc.c \
+		$(MONTAGE)/decimalDegreeToSex.c \
+		$(MONTAGE)/sexToDecimalDegree.c \
+		$(MONTAGE)/filePath.c \
+		$(MONTAGE)/mtbl.c
 MOBJS =		$(MSRCS:%.c=%.o)
-
-# utilities
-UTIL =		./util
-USRCS =		$(UTIL)/strtod.c
-UOBJS = 	$(USRCS:%.c=%.o)
 
 # zlib
 ZEXTRA =		./zextra
@@ -87,15 +106,16 @@ ZSSRCS =	$(ZSCALE)/cdlzscale.c
 ZSOBJS = 	$(ZSSRCS:%.c=%.o)
 
 PKGOBJS =	$(JOBJS) $(MOBJS) $(UOBJS) $(ZOBJS) $(ZSOBJS)
-PKGDIRS =	$(JSFITSIO) $(MONTAGE) $(UTIL) $(ZSCALE) $(ZEXTRA)
+PKGDIRS =	$(JSFITSIO) $(MONTAGE) $(ZSCALE) $(ZEXTRA)
 
-LIBS =		lib/libwcs.a lib/libcfitsio.a lib/libz.a lib/libbz2.a
+LIBS =		lib/libcfitsio.a lib/libregions.a lib/libwcs.a lib/libutil.a \
+		lib/libem.a lib/libz.a lib/libbz2.a
 
 # combine into EMCC command
 EMCC =		emcc $(EMFLAGS) $(EMOPTS) $(EMEXPORTS) $(EMINCS) $(EMEXTRAS)
 
 # flags to generate all emcc objects (i.e. so default rule for $(CC) runs emcc)
-CC =		emcc $(EMFLAGS) -I./include -I$(JSFITSIO) -I$(UTIL) -I$(ZSCALE) -D'exit(n)=em_exit(n)'
+CC =		emcc $(EMFLAGS) -I./include -I$(JSFITSIO) -I$(ZSCALE) -D'exit(n)=em_exit(n)'
 
 all:		$(ASTROEMJS) $(ASTROEMWJS)
 
@@ -104,7 +124,7 @@ astroem.bc:	$(OBJS) $(PKGOBJS) $(LIBS)
 
 $(ASTROEMJS):	astroem.bc pre.js post.js shell-pre.js shell-post.js Makefile
 		@(echo "generating raw $(ASTROEMJS) ..."; \
-		$(EMCC) astroem.bc -o $(ASTROEMJS); \
+		$(EMCC) $(NOWASMOPTS) astroem.bc -o $(ASTROEMJS); \
 		echo "adding shell wrapper to generate $(ASTROEMJS) ..."; \
 		cat shell-pre.js > full_$(ASTROEMJS); \
 		cat $(ASTROEMJS) >> full_$(ASTROEMJS); \

@@ -1,4 +1,4 @@
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.1116902.svg)](https://doi.org/10.5281/zenodo.1116902)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.1244660.svg)](https://doi.org/10.5281/zenodo.1244660)
 
 JS9: astronomical image display everywhere
 ==========================================
@@ -76,7 +76,10 @@ build the JS9 helper and install JS9 in a web directory:
 
     # start helper
     cd path_to_web_install
-    node js9Helper.js 1>js9node.log 2>&1 &
+    # in the bash shell:
+    node js9Helper.js 1>~/logs/js9node.log 2>&1 &
+    # or, in the tcsh shell:
+    node js9Helper.js >& ~/logs/js9node.log &
 
 What about scripting?
 ---------------------

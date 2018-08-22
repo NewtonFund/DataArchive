@@ -88,12 +88,23 @@ the original FITS data.
 <a name="menus"></a> 
 <h3>JS9 Menus</h3>
 <p>
-The following menus are in the default JS9 menu bar. Note that web
+The following menus are in the default JS9 menu bar. Of course, web
 designers have control over which menus are displayed (or even whether
 the menu bar itself is displayed). Thus, not all of the menus listed below
-will be found on all web pages:
-<ul>
+will be found on all JS9-enabled web pages.
 
+<p>
+Note that the default menubar has a style in which all of the
+major menus are shown at the top-level of the menubar. This is
+the <b>classic</b> style. JS9 also supports a <b>mac</b> style
+menubar, in which the <b>File</b>, <b>Edit</b> and <b>View</b> menus
+are placed on the left side of the menubar and the <b>Help</b> menu on the
+right. The other main menus are displayed as sub-menus within
+the <b>View</b> menu.
+
+<p>
+The default top-level JS9 menus are:
+<ul>
 <li><p><b>File:</b> The File menu displays a list of all images
 currently loaded into this instance of JS9. The displayed image is
 marked with a star burst.  To display a different image, simply choose
@@ -109,7 +120,7 @@ uncompressed).  It also contains options to:
 <li><b>print ...</b> print the current image display window (including 2D graphics)
 <li><b>display FITS header</b> display FITS header of the current image
 <li><b>display FITS HDUs</b> display a list of HDUs in a multi-extension FITS file
-<li><b>save image as...</b> save the current image data in one of these formats:
+<li><b>save this image as...</b> save the current image data in one of these formats:
 <ul>
 <li><b>FITS</b> (standard astronomical image file, without 2D graphics)
 <li><b>JPEG</b> (also includes 2D graphics, such as regions)
@@ -119,14 +130,22 @@ uncompressed).  It also contains options to:
 (either an existing display or a new light window)
 <li><b>separate these images</b> move each image in this display to a new display
 <li><b>gather all images here</b>move all images from other displays to this display
+<li><b>refresh this image</b>: an advanced option that will call the
+internal redisplay routine for the displayed image (useful, for
+example, if you are reprocessing the image on disk and want to view
+the new data)
+<li><b>display the full image</b>: an advanced option that tries to
+load and display the entire image (might cause the page to crash if
+the image is too large)
 <li><b>free image memory</b>free up memory used to store the FITS file internally (which is needed for WCS reprojections, viewing FITS extensions and data cubes).
-<li><b>close image</b> to clear the current image and release browser resources
+<li><b>close this image</b> to clear the current image and release browser resources
 <li><b>close all images</b> to clear all images and release browser resources
 <li><b>remove proxy file</b> to clear a server proxy file and release browser resources
 <li><b>load catalog ...</b> load a tab-delimited catalog file into the display
 <li><b>save active catalog</b> save the currently active catalog (Shape Layers plugin has more general support)
 <li><b>load session ...</b> load a previously saved session into the display
 <li><b>save session ...</b> save information about the current image or all images loaded into this display: filename, scaling, colormap, contrast/bias, zoom, regions, catalogs, etc. are stored in a json file
+<li><b>create mosaic ...</b> create a mosaic image from the current image or all images in this display
 <li><b>new JS9 light window</b> create a light window containing a JS9 instance
 <li><b>new JS9 separate window</b> create a separate window containing a JS9 instance
 <li><b>connect to JS9 helper (Electron-based apps only)</b> if a
@@ -137,6 +156,24 @@ apps no longer have access to that helper.  Within five minutes of the
 termination, use this option to start the helper in one remaining
 app and other apps will reconnect.
 <li><b>display pageID</b>, a unique ID for this page that can be used to communicate externally with a JS9 instance when multiple JS9 instances are running (js9 --pageid [pageid])
+</ul>
+
+<li><p><b>Edit:</b> allows you to copy and paste regions, positions,
+and pixel values to/from the clipboard:
+<ul>
+<li><b>copy sel region</b>: copy the selected region to the system
+clipboard, so that you can transfer it to other JS9 displays or to
+programs outside of JS9.
+<li><b>copy all regions</b>: copy all regions to the system clipboard,
+so that you can transfer them to other JS9 displays or programs
+outside of JS9.
+<li><b>paste regions</b>: paste previously copied regions to another
+JS9 display. For security reasons, web pages are not permitted to read
+the system clipboard, so the paste command reads an internal variable filled
+from the previous JS9 copy. Thus, you cannot paste data copied from outside
+JS9. Some day ...
+<li><b>copy wcs pos</b>: copy the current WCS position to the system clipboard
+<li><b>copy value/pos</b>: copy the current pixel value and WCS position to the system clipboard
 </ul>
 
 <li><p><b>View:</b> displays a list of plugin menu options, including the following core options:
@@ -185,6 +222,15 @@ finger) moves over the image. By default, this information is
 displayed in the upper left of the image. You can redirect the display
 to a movable, light-weight window by choosing the <b>InfoBox</b> menu
 option.
+<p>
+The <b>display crosshair for this image</b> option will display a
+crosshair at the mouse position when the Shift key is held down
+(without the Shift key on iOS devices). It is turned off by default.
+
+<p>
+The <b>match wcs with other crosshairs</b> option will display a crosshair in
+other JS9 displays, matching the WCS position of the mouse in this display
+(assuming the other image has its own crosshair enabled).
 <p>
 The <b>display toolbar tooltips</b> option specifies whether tooltips
 are displayed as the mouse hovers over an icon in the <b>Toolbar</b>
@@ -301,29 +347,35 @@ a dialect of the widely-used DS9/Funtools regions format, as described
 <a href="regions.html">here</a>.
 
 <p>
-The <b>save regions</b> menu option will save all regions to a file
+The <b>save all regions</b> menu option will save all regions to a file
 named js9.reg. The file will be saved in the folder where your other
 browser downloads are stored. NB: As of 4/2015, Safari does not permit
-this sort of file saving. The <b>save regions</b> command therefore
+this sort of file saving. The <b>save all regions</b> command therefore
 displays the region text in a new tab (or window). Use Safari's 
 <b>File:Save As</b> option to save the regions to disk.
 
 <p>
-The <b>copy regions to</b> menu option will copy regions from the
+The <b>list all regions</b> menu option will display all regions.
+
+<p>
+The <b>remove all regions</b> menu option will delete all regions.
+
+<p>
+The <b>copy all regions to</b> menu option will copy regions from the
 current image to a specified image (or to all images). If one or more
 regions are actively selected in the current image, they alone will be
 copied. Otherwise, all regions will be copied.
 
 <p>
-The <b>list regions</b> menu option will display all regions.
-The <b>remove regions</b> menu option will delete all regions.
-The <b>list selected</b> menu option will display the selected region(s).
-The <b>remove selected</b> menu option will delete the selected regions(s).
+The <b>selected regions ...</b> submenu contains options that apply to
+the selected region, including the ability to set the tag of a
+selected region to "source", "background", "include", "exclude" (used
+heavily in X-ray astronomy data analysis), toggle "source"/"background"
+or "include"/"exclude", or list, remove, copy the selected region.
 
 <p>
 The <b>list on change</b> menu option will cause all regions to be
 listed whenever one changes.
-
 
 <li><p><b>WCS:</b> Use this menu option to select a world coordinate
 system when displaying pixel positions and regions (assuming
@@ -357,8 +409,61 @@ reprojected data is placed in a new <b>raw data layer</b> called
 "reproject". You can switch between layers using the <b>View->raw data
 layers</b> option.
 
-<li><p><b>Analysis:</b> Each JS9 site can define server-side analysis
-tasks to be run from the Analysis menu. Tasks are of two types:
+<li><p><b>Analysis:</b>
+JS9 supports both client-side analysis (i.e.,
+analysis in the browser) and server-side analysis (where requests are
+made to a back-end server, and returned results are displayed in the
+browser).
+
+<p>
+Client-side analysis tasks can be written using the JS9
+<a href="localtasks.html">Plugin</a> capability, and
+the <b>Analysis</b> menu lists the currently loaded <b>Analysis
+Plugins</b>. For example, JS9 supplies the
+<b>Imexam</b> plugin, which offers the following tasks:
+<ul>
+<li> 3dPlot
+<li> Encircled Energy
+<li> Histogram
+<li> Radial Proj
+<li> Region Stats
+<li> X Proj
+<li> Y Proj
+</ul>
+
+<p>
+JS9 supplies a few other client-side analysis tasks:
+<ul>
+<li><b>Coordinate Grid:</b> display a WCS-based coordinate grid. The
+coordinate grid parameters can be changed using the <b>Preferences</b>
+plugin in the <b>View</b> menu.
+<li><b>Counts in Regions:</b> Run the
+<a href="https://js9.si.edu/regions/regcnts.html" target="_blank">regcnts</a>
+program (compiled into the browser using
+<a href="https://kripken.github.io/emscripten-site/" target="_blank">
+Emscripten</a>) on the specified
+source and background regions and return a text display.  This is the
+same task as the server-side task, but running on the internal FITS file.
+<li><b>Radial Profile:</b> Run the
+<a href="https://js9.si.edu/regions/regcnts.html" target="_blank">regcnts</a>
+program (compiled into the browser using
+<a href="https://kripken.github.io/emscripten-site/" target="_blank">
+Emscripten</a>) on the specified
+source and background regions and return a plot display. The source
+regions consist of circles.  This is the same task as the server-side
+task, but running on the internal FITS file.
+<li><b>Gaussian Blur:</b> enter a sigma (radius) to create a new raw
+data layer called "gaussBlur", in which the image pixel values are
+blurred using a Gaussian function with the specified sigma. The
+routine uses the fast Gaussian blur algorithm (approximating a full
+Gaussian blur with three passes of a box blur) described <a href="
+http://blog.ivank.net/fastest-gaussian-blur.html" target="_blank">
+here</a>.
+</ul>
+
+<p>
+In addition, each JS9 site can define server-side analysis
+tasks to be run from the Analysis menu. Server-side tasks are of two types:
 <ul>
 <li><b>immediate tasks:</b> These tasks are executed directly and
 immediately from the Analysis menu. No parameter setup is needed.
@@ -368,14 +473,18 @@ executing the task. Parameter tasks are identified by the presence of
 an ellipsis (...) after the task name.
 </ul>
 <p>
-For example, the sample implementation of JS9 at
-<href="https://js9.si.edu">https://js9.si.edu</a>
+For example, the JS9 web page at
+<href="https://js9.si.edu" target="_blank">https://js9.si.edu</a>
 offers the following tasks:
 <ul>
 <li><b>FITS Header(s):</b> Display all FITS headers for this FITS file.
-<li><b>Counts in Regions:</b> Run the funcnts program on the specified
+<li><b>Counts in Regions:</b> Run the
+<a href="https://js9.si.edu/regions/regcnts.html" target="_blank">regcnts</a>
+program on the specified
 source and background regions and return a text display (immediate task).
-<li><b>Radial Profile:</b> Run the funcnts program on the specified
+<li><b>Radial Profile:</b> Run the
+<a href="https://js9.si.edu/regions/regcnts.html" target="_blank">regcnts</a>
+program on the specified
 source and background regions and return a plot display. The source regions
 consist of circles or annuli (immediate task).
 <li><b>Energy Plot:</b> Create a histogram of the pi column (or energy
@@ -397,36 +506,14 @@ to filter events instead.
 </ul>
 <p>
 If you drag and drop a FITS file onto a JS9 web page connected to a
-remove server (such as <href="https://js9.si.edu">https://js9.si.edu</a>),
+remove server (such as <href="https://js9.si.edu" target="_blank">
+https://js9.si.edu</a>),
 the FITS file will, of course, not be accessible on the server (it's only
 stored in the browser). As a result, no server-side analysis tasks will
 be available. But if the remote server supports <b>proxy loading</b>
 of FITS data, the Analysis menu will display an option to <b>upload FITS to
 make tasks available</b>. Select this option and your FITS file will
 be sent to the server so that server-side analysis can be performed.
-
-<p>
-In addition to server-side analysis, the <b>Analysis</b> menu lists
-the currently loaded <b>Analysis Plugins</b>. JS9 itself supplies the
-<b>Imexam</b> plugin, which offers the following tasks:
-<ul>
-<li> 3dPlot
-<li> Encircled Energy
-<li> Histogram
-<li> Radial Proj
-<li> Region Stats
-<li> X Proj
-<li> Y Proj
-</ul>
-
-<p>
-You also can perform a fast <b>Gaussian blur</b> by entering a sigma (radius)
-value into the <b>Gaussian blur sigma</b> option.  A new raw data layer
-called "gaussBlur" is created, in which the image pixel values are
-blurred using a Gaussian function with the specified sigma. The
-routine uses the fast Gaussian blur algorithm (approximating a full
-Gaussian blur with three passes of a box blur) described <a href="
-http://blog.ivank.net/fastest-gaussian-blur.html" target="_blank"> here</a>.
 
 <p>
 The <b>set data analysis path ...</b> option allows you to specify a
@@ -601,7 +688,7 @@ routine).  The View menu's resize parameter can be two values (width
 and height) or a single value representing both.  In addition, if an
 image containing wcs info is being displayed, you can append a single
 quote to specify a size in arc minutes (e.g. 5') or a double quote to
-specify a size in arc seconds (e.g. 300").
+specify a size in arc seconds (e.g. 300&#34;).
 <p>
 The <b>View: set to image size</b> option will set the display size to
 the size of the current image. The <b>View: set size to full
@@ -623,7 +710,7 @@ See <a href="knownissues.html">Known Issues</a>
 for a discussion of limitations imposed on resize by Webkit
 browsers such as Chrome and Safari.
 
-<h5>Last updated: February 9, 2018</h5>
+<h5>Last updated: July 15, 2018</h5>
 </div>
 
 </body>

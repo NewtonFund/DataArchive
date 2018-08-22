@@ -188,6 +188,110 @@ JS9.Prefs.regionsSchema = {
     }
 };
 
+JS9.Prefs.gridSchema = {
+    "title": "Grid Preferences",
+    "description": "Preferences for wcs coordinate grids",
+    "type": "object",
+    "properties": {
+	"strokeWidth": {
+	    "type": "number",
+	    "helper": "grid stroke width"
+	},
+	"lineColor": {
+	    "type": "string",
+	    "helper": "color of grid lines"
+	},
+	"raLines": {
+	    "type": "number",
+	    "helper": "approx. number of RA grid lines"
+	},
+	"raAngle": {
+	    "type": "number",
+	    "helper": "rotation for RA label"
+	},
+	"raSkip": {
+	    "type": "number",
+	    "helper": "number of RA lines to skip"
+	},
+	"decLines": {
+	    "type": "number",
+	    "helper": "approx. number of Dec grid lines"
+	},
+	"decAngle": {
+	    "type": "number",
+	    "helper": "rotation for Dec label"
+	},
+	"decSkip": {
+	    "type": "number",
+	    "helper": "number of Dec lines to skip"
+	},
+	"labelColor": {
+	    "type": "string",
+	    "helper": "color of text labels"
+	},
+	"labelFontFamily": {
+	    "type": "string",
+	    "helper": "label font"
+	},
+	"labelFontSize": {
+	    "type": "string",
+	    "helper": "label font size"
+	},
+	"labelFontStyle": {
+	    "type": "string",
+	    "helper": "label font style"
+	},
+	"labelFontWeight": {
+	    "type": "string",
+	    "helper": "label font weight"
+	},
+	"labelRAOffx": {
+	    "type": "number",
+	    "helper": "x offset of RA labels"
+	},
+	"labelRAOffy": {
+	    "type": "number",
+	    "helper": "y offset of RA labels"
+	},
+	"labelDecOffx": {
+	    "type": "number",
+	    "helper": "x offset of Dec labels"
+	},
+	"labelDecOffy": {
+	    "type": "number",
+	    "helper": "y offset of Dec labels"
+	},
+	"degPrec": {
+	    "type": "number",
+	    "helper": "precision for degree labels"
+	},
+	"sexaPrec": {
+	    "type": "number",
+	    "helper": "precision for sexagesimal labels"
+	},
+	"reduceDims": {
+	    "type": "boolean",
+	    "helper": "reduce lines of smaller image dim?"
+	},
+	"stride": {
+	    "type": "number",
+	    "helper": "fineness of grid lines"
+	},
+	"margin": {
+	    "type": "number",
+	    "helper": "edge margin for displaying a grid line"
+	},
+	"labelMargin": {
+	    "type": "number",
+	    "helper": "edge margin for displaying a label"
+	},
+	"cover": {
+	    "type": "string",
+	    "helper": "grid lines cover: display or image"
+	}
+    }
+};
+
 // schema for each source
 JS9.Prefs.fitsSchema = {
     "title": "FITS Preferences",
@@ -220,6 +324,10 @@ JS9.Prefs.fitsSchema = {
 	"ibin": {
 	    "type": "string",
 	    "helper": "bin factor for images"
+	},
+	"binMode": {
+	    "type": "string",
+	    "helper": "'s' for summing, 'a' for averaging"
 	},
 	"clear": {
 	    "type": "string",
@@ -284,10 +392,10 @@ JS9.Prefs.catalogsSchema = {
     }
 };
 
-// display schema for the page
-JS9.Prefs.displaysSchema = {
-    "title": "Display Preferences",
-    "description": "Preferences for each JS9 display in this page",
+// global schema for the page
+JS9.Prefs.globalsSchema = {
+    "title": "Global Preferences",
+    "description": "Global preferences for all JS9 displays",
     "properties": {
 	"topColormaps": {
 	    "type": "mobject",
@@ -317,9 +425,17 @@ JS9.Prefs.displaysSchema = {
 	    "type": "mobject",
 	    "helper": "object containing keyboard actions"
 	},
-	"mousetouchZoom": {
-	    "type": "boolean",
-	    "helper": "scroll/pinch to zoom?"
+	"centerDivs": {
+	    "type": "mobject",
+	    "helper": "divs taken into account when centering"
+	},
+	"resizeDivs": {
+	    "type": "mobject",
+	    "helper": "divs taken into account when resizing"
+	},
+	"copyWcsPosFormat": {
+	    "type": "string",
+	    "helper": "format string using: $ra $dec $sys"
 	},
 	"regionConfigSize": {
 	    "type": "string",
@@ -333,20 +449,29 @@ JS9.Prefs.displaysSchema = {
 	    "type": "boolean",
 	    "helper": "convert FITS to PNG rep files?"
 	},
+	"mousetouchZoom": {
+	    "type": "boolean",
+	    "helper": "scroll/pinch to zoom?"
+	},
 	"toolbarTooltips": {
 	    "type": "boolean",
 	    "helper": "show tooltips in Toolbar plugin?"
+	},
+	"magnifierRegions": {
+	    "type": "boolean",
+	    "helper": "show regions in magnifier?"
 	}
     }
 };
 
 // source object for preferences
 JS9.Prefs.sources = [
+    {name: "globals",  schema: JS9.Prefs.globalsSchema},
     {name: "images",   schema: JS9.Prefs.imagesSchema},
-    {name: "regions",  schema: JS9.Prefs.regionsSchema},
     {name: "fits",     schema: JS9.Prefs.fitsSchema},
-    {name: "catalogs", schema: JS9.Prefs.catalogsSchema},
-    {name: "displays", schema: JS9.Prefs.displaysSchema}
+    {name: "regions",  schema: JS9.Prefs.regionsSchema},
+    {name: "grid",     schema: JS9.Prefs.gridSchema},
+    {name: "catalogs", schema: JS9.Prefs.catalogsSchema}
 ];
 
 // init preference plugin
@@ -379,6 +504,9 @@ JS9.Prefs.init = function(){
 	case "regions":
 	    source.data = JS9.Regions.opts;
 	    break;
+	case "grid":
+	    source.data = JS9.Grid.opts;
+	    break;
 	case "fits":
 	    // make up "nicer" option values from raw object
 	    source.data = {extlist: JS9.fits.options.extlist,
@@ -388,6 +516,7 @@ JS9.Prefs.init = function(){
 			   ixdim: JS9.fits.options.image.xdim,
 			   iydim: JS9.fits.options.image.ydim,
 			   ibin: JS9.fits.options.image.bin,
+			   binMode: JS9.globalOpts.binMode,
 			   clear: JS9.globalOpts.clearImageMemory};
 	    break;
 	case "catalogs":
@@ -404,15 +533,19 @@ JS9.Prefs.init = function(){
 			   tooltip: JS9.globalOpts.catalogs.tooltip,
 			   skip: JS9.globalOpts.catalogs.skip};
 	    break;
-	case "displays":
+	case "globals":
 	    source.data = {fits2png: JS9.globalOpts.fits2png,
 			   fits2fits: JS9.globalOpts.fits2fits,
 			   toolbarTooltips: JS9.globalOpts.toolbarTooltips,
+			   magnifierRegions: JS9.globalOpts.magnifierRegions,
 			   topColormaps: JS9.globalOpts.topColormaps,
 			   mouseActions: JS9.globalOpts.mouseActions,
 			   touchActions: JS9.globalOpts.touchActions,
 			   keyboardActions: JS9.globalOpts.keyboardActions,
+			   centerDivs: JS9.globalOpts.centerDivs,
+			   resizeDivs: JS9.globalOpts.resizeDivs,
 			   mousetouchZoom: JS9.globalOpts.mousetouchZoom,
+			   copyWcsPosFormat: JS9.globalOpts.copyWcsPosFormat,
 			   regionConfigSize: JS9.globalOpts.regionConfigSize,
 			   infoBox: JS9.globalOpts.infoBox,
 			   toolBar: JS9.globalOpts.toolBar,
@@ -559,13 +692,16 @@ JS9.Prefs.processForm = function(source, arr, display, winid){
     case "regions":
 	obj = JS9.Regions.opts;
 	break;
+    case "grid":
+	obj = JS9.Grid.opts;
+	break;
     case "fits":
 	obj = JS9.fits.options;
 	break;
     case "catalogs":
 	obj = JS9.globalOpts.catalogs;
 	break;
-    case "displays":
+    case "globals":
 	obj = JS9.globalOpts;
 	break;
     }
@@ -633,6 +769,9 @@ JS9.Prefs.processForm = function(source, arr, display, winid){
 	        case "ibin":
 		    obj.image.bin = Math.floor(parseFloat(val));
 	            break;
+		case "binMode":
+		    JS9.globalOpts.binMode = val;
+		    break;
 		case "clear":
 		    JS9.globalOpts.clearImageMemory = val;
 		    break;
@@ -653,7 +792,7 @@ JS9.Prefs.processForm = function(source, arr, display, winid){
 		    break;
 		}
 		break;
-	    case "displays":
+	    case "globals":
 	        switch(key){
  	        case "toolBar":
 	            // set new option value
@@ -677,10 +816,6 @@ JS9.Prefs.processForm = function(source, arr, display, winid){
 		default:
 	            // set new option value
 	            obj[key] = val;
-		    // change option value in this display as well
-		    for(j=0; j<JS9.displays.length; j++){
-			JS9.displays[j][key] = val;
-		    }
 		    source.data[key] = val;
 		    break;
 		}
@@ -689,6 +824,14 @@ JS9.Prefs.processForm = function(source, arr, display, winid){
 		// set new option value
 	        obj[key] = val;
 	        break;
+	    }
+	}
+    }
+    // extended plugins
+    if( JS9.globalOpts.extendedPlugins ){
+	for(j=0; j<JS9.displays.length; j++){
+	    if( JS9.displays[j].image ){
+		JS9.displays[j].image.xeqPlugins("image", "onupdateprefs");
 	    }
 	}
     }
